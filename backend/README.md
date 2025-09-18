@@ -99,6 +99,7 @@ Principais: `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BAC
   - Fallback: busca `merchant_order` e infere pelo item (`CREDITS-PACK-3` → 3).
 - Idempotência por `payment_id` (reference_id `mp_<payment_id>`).
 - Autopagamento bloqueado se `MERCADO_PAGO_SELLER_EMAIL` == e-mail do pagador.
+- Produção: configure `FRONTEND_URL` com o domínio público (ex.: `https://calculaconfia.com.br`) para redirecionamento correto após o checkout.
 
 ## Endpoints (APIs)
 Autenticação: JWT Bearer no header `Authorization: Bearer <TOKEN>` quando indicado.
