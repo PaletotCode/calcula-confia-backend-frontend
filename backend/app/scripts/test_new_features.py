@@ -15,7 +15,7 @@ import requests
 import json
 import sys
 import os
-import datetime
+from datetime import datetime
 
 # Configurações
 BASE_URL = "http://localhost:8000/api/v1"
@@ -148,17 +148,15 @@ def login_user(identifier, password):
         "password": password
     }
     
-    session = requests.Session()
     try:
-        response = session.post(f"{BASE_URL}/login", data=payload)
+        response = requests.post(f"{BASE_URL}/login", data=payload)
         
         if response.status_code == 200:
             data = response.json()
             log(f"✅ Login realizado com sucesso", "SUCCESS")
-            cookie = session.cookies.get("access_token")
-            log(f"  Cookie presente: {'sim' if cookie else 'não'}")
+            log(f"  Token type: {data['token_type']}")
             log(f"  Expira em: {data['expires_in']} segundos")
-            return session
+            return data["access_token"]
         else:
             log(f"❌ Erro no login: {response.status_code} - {response.text}", "ERROR")
             return None
@@ -168,9 +166,14 @@ def login_user(identifier, password):
         return None
 
 
-def test_calculation(session):
-    """Testa cálculo autenticado"""
+def test_calculation(token):
+    """Testa cálculo com o token"""
     log("Testando cálculo")
+    
+    headers = {
+        **HEADERS,
+        "Authorization": f"Bearer {token}"
+    }
     
     payload = {
         "bills": [
@@ -181,7 +184,7 @@ def test_calculation(session):
     }
     
     try:
-        response = session.post(f"{BASE_URL}/calcular", json=payload, headers=HEADERS)
+        response = requests.post(f"{BASE_URL}/calcular", json=payload, headers=headers)
         
         if response.status_code == 200:
             data = response.json()
@@ -199,12 +202,17 @@ def test_calculation(session):
         return None
 
 
-def get_user_info(session):
+def get_user_info(token):
     """Testa busca de informações do usuário"""
     log("Buscando informações do usuário")
     
+    headers = {
+        **HEADERS,
+        "Authorization": f"Bearer {token}"
+    }
+    
     try:
-        response = session.get(f"{BASE_URL}/me", headers=HEADERS)
+        response = requests.get(f"{BASE_URL}/me", headers=headers)
         
         if response.status_code == 200:
             data = response.json()
@@ -225,12 +233,17 @@ def get_user_info(session):
         return None
 
 
-def get_referral_stats(session):
+def get_referral_stats(token):
     """Testa estatísticas de referência"""
     log("Buscando estatísticas de referência")
     
+    headers = {
+        **HEADERS,
+        "Authorization": f"Bearer {token}"
+    }
+    
     try:
-        response = session.get(f"{BASE_URL}/referral/stats", headers=HEADERS)
+        response = requests.get(f"{BASE_URL}/referral/stats", headers=headers)
         
         if response.status_code == 200:
             data = response.json()
@@ -249,12 +262,17 @@ def get_referral_stats(session):
         return None
 
 
-def get_credit_balance(session):
+def get_credit_balance(token):
     """Testa saldo de créditos válidos"""
     log("Buscando saldo de créditos válidos")
-
+    
+    headers = {
+        **HEADERS,
+        "Authorization": f"Bearer {token}"
+    }
+    
     try:
-        response = session.get(f"{BASE_URL}/credits/balance", headers=HEADERS)
+        response = requests.get(f"{BASE_URL}/credits/balance", headers=headers)
         
         if response.status_code == 200:
             data = response.json()
@@ -271,12 +289,17 @@ def get_credit_balance(session):
         return None
 
 
-def simulate_referral_payment(session):
+def simulate_referral_payment(token):
     """Testa simulação de pagamento para bônus de referência"""
     log("Simulando pagamento para testar bônus de referência")
     
+    headers = {
+        **HEADERS,
+        "Authorization": f"Bearer {token}"
+    }
+    
     try:
-        response = session.post(f"{BASE_URL}/dev/simulate-referral-payment", headers=HEADERS)
+        response = requests.post(f"{BASE_URL}/dev/simulate-referral-payment", headers=headers)
         
         if response.status_code == 200:
             data = response.json()
@@ -382,13 +405,13 @@ def main():
     print("="*60)
     
     # 5. Fazer login com telefone
-    session1 = login_user(TEST_USERS[0]["phone_number"], TEST_USERS[0]["password"])
-    if not session1:
+    token1 = login_user(TEST_USERS[0]["phone_number"], TEST_USERS[0]["password"])
+    if not token1:
         log("Falha no login com telefone", "FATAL")
         return
     
     # 6. Buscar informações do usuário
-    user_info = get_user_info(session1)
+    user_info = get_user_info(token1)
     if not user_info:
         log("Falha ao buscar informações do usuário", "ERROR")
     
@@ -407,20 +430,20 @@ def main():
                 verify_account(TEST_USERS[1]["phone_number"], verification_code2)
                 
                 # Login do segundo usuário
-                session2 = login_user(TEST_USERS[1]["phone_number"], TEST_USERS[1]["password"])
-                if session2:
+                token2 = login_user(TEST_USERS[1]["phone_number"], TEST_USERS[1]["password"])
+                if token2:
                     # Simular pagamento para ativar bônus de referência
-                    simulate_referral_payment(session2)
+                    simulate_referral_payment(token2)
     
     # 8. Verificar estatísticas de referência do primeiro usuário
-    get_referral_stats(session1)
+    get_referral_stats(token1)
     
     print("\n" + "="*60)
     print("💳 TESTE 4: SISTEMA DE CRÉDITOS VÁLIDOS")
     print("="*60)
     
     # 9. Verificar saldo de créditos válidos
-    get_credit_balance(session1)
+    get_credit_balance(token1)
     
     print("\n" + "="*60)
     print("🧮 TESTE 5: CÁLCULOS COM NOVA LÓGICA")
@@ -429,7 +452,7 @@ def main():
     # 10. Realizar alguns cálculos
     for i in range(2):
         log(f"Realizando cálculo {i+1}")
-        calculation_result = test_calculation(session1)
+        calculation_result = test_calculation(token1)
         if calculation_result:
             log(f"Créditos após cálculo {i+1}: {calculation_result['creditos_restantes']}")
     

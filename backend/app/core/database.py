@@ -7,29 +7,11 @@ from typing import AsyncGenerator
 
 from .config import settings
 
-
-def _normalize_asyncpg_url(url: str) -> str:
-    """Ensure DATABASE_URL uses asyncpg and strip quotes.
-    Accepts postgres:// or postgresql:// and converts to postgresql+asyncpg://
-    """
-    if not url:
-        return url
-    u = str(url).strip().strip('"').strip("'")
-    if u.startswith("postgres://"):
-        u = "postgresql://" + u[len("postgres://"):]
-    if u.startswith("postgresql+asyncpg://"):
-        return u
-    if u.startswith("postgresql+psycopg2://"):
-        return "postgresql+asyncpg://" + u[len("postgresql+psycopg2://"):]
-    if u.startswith("postgresql://"):
-        return "postgresql+asyncpg://" + u[len("postgresql://"):]
-    return u
-
 Base = declarative_base()
 
 # Database Engine - Configuração comercial otimizada
 engine = create_async_engine(
-    _normalize_asyncpg_url(settings.DATABASE_URL),
+    settings.DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
     pool_pre_ping=True,
     pool_size=20,           # Pool maior para produção

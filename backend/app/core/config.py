@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-super-secret-key-in-production-please"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    COOKIE_DOMAIN: Optional[str] = None
     
     # Redis Cache
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -42,7 +41,6 @@ class Settings(BaseSettings):
 
     #Mercado pago
     MERCADO_PAGO_ACCESS_TOKEN: Optional[str] = None
-    MERCADO_PAGO_SELLER_EMAIL: Optional[str] = None
     
     # Email Configuration (VALORES PADRÃO PARA DESENVOLVIMENTO)
     MAIL_USERNAME: str = "paletot.business@gmail.com"
@@ -57,14 +55,6 @@ class Settings(BaseSettings):
     APP_NAME: str = "Torres Project API"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
-
-    # URLs públicas
-    PUBLIC_BASE_URL: Optional[str] = None
-    FRONTEND_URL: Optional[str] = None
-
-    # Segurança / rede
-    ALLOWED_HOSTS: Optional[str] = None
-    EXTRA_CORS_ORIGINS: Optional[str] = None
 
     class Config:
         env_file = ".env"  # 🔥 Importante: ler do arquivo .env
