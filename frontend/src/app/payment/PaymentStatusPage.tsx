@@ -71,6 +71,19 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
   const [hasTimedOut, setHasTimedOut] = useState(false);
 
   const content = useMemo(() => STATUS_CONTENT[status], [status]);
+  const credits = useMemo(() => extractCreditsFromUser(user), [user]);
+  const hasSuccessfulPayment = useMemo(() => {
+    if (!user) {
+      return false;
+    }
+
+    if (credits > 0) {
+      return true;
+    }
+
+    return inferPurchaseFromUser(user);
+  }, [credits, user]);
+  const canAccessPlatform = isAuthenticated && hasSuccessfulPayment;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -91,9 +104,11 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
 
     void runRefresh();
 
+    const intervalDelay = status === "success" ? 2000 : 4000;
+
     intervalId = window.setInterval(() => {
       void refresh();
-    }, 4000);
+    }, intervalDelay);
 
     timeoutId = window.setTimeout(() => {
       if (!disposed) {
@@ -114,19 +129,21 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
         window.clearTimeout(timeoutId);
       }
     };
-  }, [refresh]);
+  }, [refresh, status]);
 
   useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
-    const credits = extractCreditsFromUser(user);
-    if (credits > 0 || inferPurchaseFromUser(user)) {
+
+    if (status === "success" && hasSuccessfulPayment) {
       router.replace("/platform");
     }
-  }, [isAuthenticated, router, user]);
+  }, [hasSuccessfulPayment, isAuthenticated, router, status]);
 
   const showLoginReminder = !isAuthenticated && status !== "failure";
+  const showAwaitPaymentMessage =
+    isAuthenticated && !hasSuccessfulPayment && status !== "failure";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -154,6 +171,13 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
                 {content.highlight}
               </p>
             ) : null}
+            {showAwaitPaymentMessage ? (
+              <p className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                Ainda não identificamos um pagamento aprovado nesta conta. Assim
+                que o Mercado Pago confirmar, vamos liberar o acesso
+                automaticamente — mantenha esta página aberta.
+              </p>
+            ) : null}
             {hasTimedOut && content.timeoutMessage ? (
               <p className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-100">
                 {content.timeoutMessage}
@@ -168,12 +192,23 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
           </div>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link
-              href="/platform"
-              className="cta-button inline-flex w-full items-center justify-center rounded-xl px-5 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
-            >
-              Acessar a plataforma
-            </Link>
+            {canAccessPlatform ? (
+              <Link
+                href="/platform"
+                className="cta-button inline-flex w-full items-center justify-center rounded-xl px-5 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
+              >
+                Acessar a plataforma
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                className="cta-button inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl px-5 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white/80 opacity-60 shadow-lg sm:w-auto"
+              >
+                Aguardando confirmação do pagamento
+              </button>
+            )}
             <Link
               href="/"
               className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-5 py-3 text-center text-sm font-semibold text-white/80 transition hover:border-white/40 hover:text-white sm:w-auto"
@@ -181,6 +216,11 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
               Voltar para a página inicial
             </Link>
           </div>
+          {!canAccessPlatform ? (
+            <p className="mt-4 text-center text-xs uppercase tracking-wide text-white/60">
+              O acesso só é liberado após um pagamento aprovado vinculado a esta conta.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
