@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plataforma - CalculaConfia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-dark': '#1e293b', 
+                        'primary-accent': '#0d9488', // Teal 600
+                        'primary-accent-hover': '#0f766e', // Teal 700
+                        'secondary-accent': '#ca8a04', 
+                        'background-light': '#f1f5f9', 
+                        'text-dark': '#0f172a',
+                        'text-light': '#f8fafc', 
+                        'nav-bg': 'rgba(30, 41, 59, 0.9)', 
+                        'hover-home': '#0d9488',
+                        'hover-calc': '#3b82f6', 'hover-hist': '#8b5cf6', 'hover-wallet': '#ca8a04', 'hover-logout': '#ef4444',
+                    },
+                },
+            },
+        };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.451.0/dist/umd/lucide.min.js" defer></script>
+    <!-- Biblioteca para máscaras de input -->
+    <script src="https://unpkg.com/imask" defer></script>
+    <!-- Biblioteca para o Calendário (Flatpickr) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js" defer></script>
+
+    <!-- Security: CSP to allow needed CDNs (mirrors index.html) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.mercadopago.com https://unpkg.com https://cdn.jsdelivr.net https://npmcdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; media-src 'self'; connect-src 'self' https://calculaconfia-production.up.railway.app https://api.mercadopago.com https://sdk.mercadopago.com; frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com; base-uri 'self'; form-action 'self';">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        .nav-container {
+            perspective: 800px;
+        }
+
+        .nav-enter {
+            animation: slideUp 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            position: relative; /* Essencial para o pseudo-elemento ::before */
+            overflow: hidden;
+        }
+        
+        /* Efeito Aurora Líquida com CSS */
+        .nav-enter::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(13, 148, 136, 0.2), transparent 25%),
+                radial-gradient(circle at 80% 30%, rgba(59, 130, 246, 0.2), transparent 25%),
+                radial-gradient(circle at 30% 80%, rgba(139, 92, 246, 0.2), transparent 25%),
+                radial-gradient(circle at 90% 90%, rgba(202, 138, 4, 0.2), transparent 25%);
+            background-size: 200% 200%;
+            animation: liquid-aurora 15s linear infinite;
+            z-index: 0;
+        }
+
+        #nav-links {
+            position: relative;
+            z-index: 1; /* Coloca os links na frente do efeito */
+        }
+
+
+        @keyframes liquid-aurora {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        #page-container {
+            display: flex;
+            width: 400%;
+            height: 100%;
+            transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        .page {
+            width: 25%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 1.5rem; flex-shrink: 0;
+        }
+
+        #nav-indicator {
+            position: absolute; bottom: 4px; height: 3px; background-color: var(--active-indicator-color, #0d9488); border-radius: 999px; box-shadow: 0 0 10px 0 var(--active-indicator-color, #0d9488);
+            transition: left 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), background-color 0.3s ease;
+            z-index: 2;
+        }
+        
+        /* --- ESTILOS ATUALIZADOS PARA O FLUXO DE CÁLCULO --- */
+        #calculate.page { position: relative; }
+        #calculate-container { width: 100%; height: 100%; position: relative; }
+
+        .calculator-step {
+            width: 100%; height: 100%; flex-shrink: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: absolute; top: 0; left: 0; padding: 1.5rem;
+            opacity: 0; visibility: hidden;
+            transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out, visibility 0.4s ease-in-out;
+            transform: scale(0.98);
+        }
+
+        .calculator-step.active { opacity: 1; visibility: visible; z-index: 5; transform: scale(1); }
+
+        /* Animação de partículas */
+        #welcome-step { background-color: #0f172a; overflow: hidden; z-index: 6; }
+        .particle { position: absolute; background-color: #0d9488; border-radius: 50%; opacity: 0; animation: rise 10s infinite linear; }
+        @keyframes rise { 0% { transform: translateY(100vh) scale(0); opacity: 1; } 100% { transform: translateY(-10vh) scale(1); opacity: 0; } }
+        .welcome-content { animation: welcome-fade-in 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) .2s forwards; opacity: 0; }
+        @keyframes welcome-fade-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .start-btn { background-color: #0d9488; color: white; padding: 0.75rem 2rem; border-radius: 999px; font-weight: 600; box-shadow: 0 5px 20px rgba(13, 148, 136, 0.4); transition: all 0.3s ease; animation: pulse-glow 2.5s infinite; }
+        .start-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(13, 148, 136, 0.6); animation-play-state: paused; }
+        @keyframes pulse-glow { 0% { box-shadow: 0 5px 20px rgba(13, 148, 136, 0.4); } 50% { box-shadow: 0 5px 30px rgba(13, 148, 136, 0.6); } 100% { box-shadow: 0 5px 20px rgba(13, 148, 136, 0.4); } }
+
+        /* Estilos da tela de seleção de contas */
+        .back-btn { position: absolute; top: 1.5rem; left: 1.5rem; background-color: #e2e8f0; border-radius: 50%; padding: 0.5rem; transition: background-color 0.2s; z-index: 10; }
+        .back-btn:hover { background-color: #cbd5e1; }
+        .bill-option-card { border: 2px solid #e2e8f0; transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        .bill-option-card:hover { transform: translateY(-4px); border-color: #0d9488; box-shadow: 0 10px 20px -5px rgba(13, 148, 136, 0.2); }
+        .bill-option-card.selected { background-color: #0d9488; color: white; border-color: #0d9488; }
+        
+        /* Animação do aviso */
+        #recommendation-alert.hidden { display: none; }
+        #recommendation-alert { animation: alert-fade-in .5s ease-out; }
+        @keyframes alert-fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .shake { animation: shake-anim 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake-anim { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+        
+        /* --- ESTILOS FLUXO DE FORMULÁRIO E CALENDÁRIO --- */
+        .input-field { font-size: 1rem; padding: 0.75rem 1rem 0.75rem 3rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; width: 100%; transition: border-color 0.3s; }
+        .input-group { position: relative; }
+        .input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+        .input-field:focus { border-color: #3b82f6; outline: none; }
+        /* Estilos para o Flatpickr */
+        .flatpickr-calendar { font-family: 'Inter', sans-serif; background: #ffffff; border-radius: 0.75rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }
+        .flatpickr-day { color: #1e293b; }
+        .flatpickr-day.selected { background: #0d9488; border-color: #0d9488; color: #fff; }
+        .flatpickr-day:hover { background: #ccfbf1; }
+        .flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months { color: #1e293b; }
+
+        /* --- CARROSSEL --- */
+        .carousel-container { position: relative; overflow: hidden; border-radius: 1rem; background-color: #e2e8f0; box-shadow: inset 0 2px 4px rgba(0,0,0,0.06); }
+        .carousel-track { display: flex; transition: transform 0.5s ease-in-out; }
+        .carousel-slide { flex-shrink: 0; width: 100%; padding: 1rem; text-align: center; }
+        .carousel-slide img { max-width: 100%; height: auto; max-height: 150px; margin: 0 auto 0.5rem; object-fit: contain; }
+        .carousel-dots { position: absolute; bottom: 0.75rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.5rem; }
+        .carousel-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background-color: rgba(0,0,0,0.2); transition: background-color 0.3s; cursor: pointer; }
+        .carousel-dot.active { background-color: #3b82f6; }
+        
+        /* TELA DE CONFIRMAÇÃO (REFATORADA) */
+        .summary-cards-container { scrollbar-width: thin; scrollbar-color: #3b82f6 #e2e8f0; }
+        .calculate-btn-premium { background: linear-gradient(45deg, #0d9488, #3b82f6); color: white; transition: all 0.3s ease; }
+        .calculate-btn-premium:hover { transform: translateY(-2px); box-shadow: 0 7px 20px -5px rgba(13, 148, 136, 0.5); }
+
+
+        /* TELA DE CARREGAMENTO "UAU" */
+        #loading-step { background-color: #0f172a; color: #e2e8f0; }
+        .timeline { position: relative; padding-left: 2.5rem; text-align: left; }
+        .timeline-item { position: relative; padding-bottom: 2rem; }
+        .timeline-item::before { content: ''; position: absolute; left: -2.05rem; top: 0.25rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; background-color: #1e293b; border: 3px solid #334155; transition: all 0.5s ease; }
+        .timeline-item.completed::before { background-color: #0d9488; border-color: #0d9488; box-shadow: 0 0 10px #0d9488; }
+        .timeline-item:not(:last-child)::after { content: ''; position: absolute; left: -1.4rem; top: 1.75rem; bottom: -0.5rem; width: 3px; background-color: #334155; }
+        .timeline-content { opacity: 0.5; transition: opacity 0.5s ease; }
+        .timeline-item.active .timeline-content { opacity: 1; }
+        .timeline-item.completed .timeline-content { opacity: 1; }
+        .loader-icon { transition: all 0.5s ease; }
+        .timeline-item.active .loader-icon { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* TELA DE RESULTADO "UAU" */
+        #result-step { background: radial-gradient(circle, #1e293b, #0f172a); }
+        .result-content { opacity: 0; transform: scale(0.8); animation: result-reveal 1s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
+        .result-value { color: #0d9488; text-shadow: 0 0 25px rgba(13, 148, 136, 0.8), 0 0 10px rgba(13, 148, 136, 0.6); animation: result-glow 3s infinite alternate; }
+        @keyframes result-reveal { to { opacity: 1; transform: scale(1); } }
+        @keyframes result-glow { from { text-shadow: 0 0 25px rgba(13, 148, 136, 0.8); } to { text-shadow: 0 0 40px rgba(13, 148, 136, 1); } }
+    </style>
+</head>
+
+<body class="bg-slate-100 flex flex-col h-screen">
+
+    <main class="flex-grow w-full overflow-hidden">
+        <div id="page-container">
+            <!-- PÁGINA INÍCIO -->
+            <section id="home" class="page text-center"><p class="text-2xl text-slate-600">Página Inicial</p></section>
+            
+            <!-- PÁGINA CALCULAR -->
+            <section id="calculate" class="page !p-0 overflow-hidden">
+                <div id="calculate-container" class="w-full h-full">
+                    <!-- PASSO 1: BOAS-VINDAS -->
+                    <div id="welcome-step" class="calculator-step active">
+                        <div id="welcome-bg" class="absolute top-0 left-0 w-full h-full"></div>
+                        <div class="welcome-content text-center z-10 p-4">
+                            <h1 class="text-4xl md:text-5xl font-bold text-white" style="text-shadow: 0 0 15px rgba(13, 148, 136, 0.7);">É um prazer tê-lo aqui.</h1>
+                            <p class="text-slate-300 mt-4 max-w-md mx-auto">Vamos descobrir juntos o valor estimado que você pode ter a receber.</p>
+                            <button id="start-calculation-btn" class="start-btn mt-8">Vamos começar</button>
+                        </div>
+                    </div>
+
+                    <!-- PASSO 2: SELEÇÃO DE CONTAS -->
+                    <div id="selection-step" class="calculator-step bg-white">
+                        <button id="back-to-welcome-btn" class="back-btn"><i data-lucide="arrow-left" class="w-6 h-6 text-slate-600"></i></button>
+                        <div class="text-center w-full max-w-3xl h-full flex flex-col justify-center overflow-y-auto pb-24 px-4">
+                           <h2 class="text-3xl font-bold text-text-dark">Você tem quantas contas em mãos?</h2>
+                           <p class="text-slate-500 mt-2">Selecione o número de faturas que você usará para a simulação.</p>
+                           <div id="bill-options-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 sm:gap-4 mt-8">
+                                <!-- Opções serão geradas via JS -->
+                           </div>
+                           <div id="recommendation-alert" class="hidden mt-6 max-w-lg mx-auto p-4 bg-red-100 border-l-4 border-red-500 text-red-800 rounded-lg">
+                               <div class="flex items-start gap-3">
+                                   <i data-lucide="alert-triangle" class="w-6 h-6 mt-1 text-red-600 flex-shrink-0"></i>
+                                   <div>
+                                       <p class="font-bold">Recomendação</p>
+                                       <p class="text-sm">Para uma melhor estimativa, recomendamos iniciar com pelo menos três contas.</p>
+                                       <div class="mt-3 flex flex-col sm:flex-row items-stretch justify-center gap-3">
+                                          <button id="accept-recommendation-btn" class="bg-red-500 text-white text-sm font-semibold py-2 px-4 rounded-lg hover:bg-red-600 transition-colors">Usar 3 faturas</button>
+                                          <button id="continue-anyway-btn" class="bg-slate-200 text-slate-700 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors">Continuar mesmo assim</button>
+                                       </div>
+                                   </div>
+                               </div>
+                           </div>
+                        </div>
+                    </div>
+                    
+                    <!-- PASSOS DE FORMULÁRIO (placeholder) -->
+                    <div id="form-steps-container"></div>
+
+
+                    <!-- PASSO FINAL 1: CONFIRMAÇÃO (REFATORADO) -->
+                    <div id="confirmation-step" class="calculator-step bg-slate-100 !pb-24">
+                        <button class="back-btn" data-action="go-back-form"><i data-lucide="arrow-left" class="w-6 h-6 text-slate-600"></i></button>
+                        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg w-full max-w-lg text-center">
+                            <h2 class="text-2xl font-bold text-text-dark">Resumo da Simulação</h2>
+                            <p class="text-slate-500 mt-2 mb-6">Confira os dados das faturas que você inseriu. Se tudo estiver correto, podemos prosseguir.</p>
+                            
+                            <div id="summary-details" class="summary-cards-container max-h-60 overflow-y-auto space-y-4 text-left p-4 bg-slate-50 rounded-lg border">
+                                <!-- Summary details will be injected here -->
+                            </div>
+                    
+                            <div class="mt-6 p-4 bg-blue-100 text-blue-800 rounded-lg text-sm flex items-center gap-3">
+                                <i data-lucide="info" class="w-5 h-5 flex-shrink-0"></i>
+                                <span>Esta simulação consumirá <strong>1 crédito</strong> do seu saldo.</span>
+                            </div>
+                    
+                            <button id="start-calculation-premium-btn" class="calculate-btn-premium w-full mt-6 py-3 text-lg font-semibold rounded-lg">
+                                Confirmar e Calcular
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- PASSO FINAL 2: CARREGAMENTO -->
+                    <div id="loading-step" class="calculator-step">
+                        <div class="flex flex-col items-center justify-center text-center w-full max-w-md p-4 mx-auto">
+                           <h2 class="text-3xl font-bold text-white mb-8">Processando sua simulação...</h2>
+                           <div id="loading-timeline" class="timeline w-full">
+                                <!-- Itens da timeline serão injetados aqui -->
+                           </div>
+                        </div>
+                    </div>
+
+                    <!-- PASSO FINAL 3: RESULTADO -->
+                    <div id="result-step" class="calculator-step">
+                        <div class="result-content text-center pb-24">
+                            <p class="text-2xl text-slate-300 mb-2">Seu valor estimado de restituição é de</p>
+                            <h2 id="result-value-display" class="result-value text-6xl md:text-7xl font-bold">R$ 0,00</h2>
+                            <div class="mt-12 flex flex-col sm:flex-row gap-4 justify-center">
+                                <button data-action="restart" class="bg-slate-200 text-slate-800 font-semibold py-3 px-6 rounded-full transition hover:bg-slate-300">Começar de novo</button>
+                                <button data-action="view-summary" class="start-btn">Ver o resumo</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- PÁGINA HISTÓRICO -->
+            <section id="history" class="page text-center"><p class="text-2xl text-slate-600">Histórico de Cálculos</p></section>
+            
+            <!-- PÁGINA CRÉDITOS -->
+            <section id="credits" class="page text-center"><p class="text-2xl text-slate-600">Gestão de Créditos</p></section>
+        </div>
+    </main>
+
+    <div class="nav-container fixed bottom-5 left-1/2 -translate-x-1/2 z-10">
+        <nav class="nav-enter w-auto max-w-[95vw] px-3 py-1 bg-nav-bg backdrop-blur-lg rounded-3xl shadow-2xl shadow-primary-dark/40">
+            <div class="flex items-center justify-center gap-2 sm:gap-3 relative" id="nav-links">
+                <div id="nav-indicator"></div>
+                <a href="#home" data-color="#0d9488" data-index="0" class="nav-link p-2 rounded-lg" title="Início"><div class="flex flex-col items-center gap-1 text-primary-accent"><i data-lucide="home" class="w-6 h-6"></i><span class="text-xs font-medium">Início</span></div></a>
+                <a href="#calculate" data-color="#3b82f6" data-index="1" class="nav-link p-2 rounded-lg" title="Nova Simulação"><div class="flex flex-col items-center gap-1 text-slate-300 hover:text-hover-calc"><i data-lucide="calculator" class="w-6 h-6"></i><span class="text-xs font-medium">Calcular</span></div></a>
+                <a href="#history" data-color="#8b5cf6" data-index="2" class="nav-link p-2 rounded-lg" title="Histórico"><div class="flex flex-col items-center gap-1 text-slate-300 hover:text-hover-hist"><i data-lucide="history" class="w-6 h-6"></i><span class="text-xs font-medium">Histórico</span></div></a>
+                <a href="#credits" data-color="#ca8a04" data-index="3" class="nav-link p-2 rounded-lg" title="Créditos"><div class="flex flex-col items-center gap-1 text-slate-300 hover:text-hover-wallet"><i data-lucide="wallet" class="w-6 h-6"></i><span class="text-xs font-medium">Créditos</span></div></a>
+                <div class="w-px h-8 bg-slate-700"></div>
+                <a href="#" id="logout-btn-platform" class="nav-link p-2 rounded-lg" title="Sair"><div class="flex flex-col items-center gap-1 text-slate-300 hover:text-hover-logout"><i data-lucide="log-out" class="w-6 h-6"></i><span class="text-xs font-medium">Sair</span></div></a>
+            </div>
+        </nav>
+    </div>
+
+    <script type="application/json" id="env-config">{"NEXT_PUBLIC_API_URL":"https://calculaconfia-production.up.railway.app/api/v1","NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY":"APP_USR-07c4af2e-52c5-4b7e-b46c-94715c52e515"}</script>
+        <script src="platform.js" nonce="platform-js" defer></script>
+</body>
+</html>

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CalculaConfia - Descubra Sua Restituição de ICMS da Conta de Luz</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <!-- Vendor bundles via CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.451.0/dist/umd/lucide.min.js" id="lucide-script" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js" defer></script>
+    <!-- Mercado Pago SDK v2 (Checkout Pro) -->
+    <script src="https://sdk.mercadopago.com/js/v2" defer></script>
+    
+    <!-- Security: CSP + Referrer Policy -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.mercadopago.com https://*.mercadopago.com https://*.mercadolibre.com https://static.cloudflareinsights.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://npmcdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://i.imgur.com https://*.mercadopago.com https://*.mercadolibre.com; media-src 'self' https://i.imgur.com; connect-src 'self' https://calculaconfia-production.up.railway.app http://localhost:3000 http://localhost:8000 https://api.mercadopago.com https://sdk.mercadopago.com https://*.mercadopago.com https://api.mercadolibre.com https://*.mercadolibre.com https://cloudflareinsights.com https://static.cloudflareinsights.com; frame-src 'self' https://*.mercadopago.com https://*.mercadopago.com.br https://*.mercadolibre.com; base-uri 'self'; upgrade-insecure-requests">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <style>
+        :root {
+            --primary-dark: #1e293b; /* Slate 800 */
+            --primary-accent: #16a34a; /* Green 600 */
+            --primary-accent-hover: #15803d; /* Green 700 */
+            --secondary-accent: #ca8a04; /* Yellow 600 */
+            --background-light: #f1f5f9; /* Slate 100 */
+            --text-dark: #0f172a;
+            --text-light: #f8fafc; /* Slate 50 */
+            --glass-bg: rgba(241, 245, 249, 0.7); /* Slate 100 com 70% opacidade */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-light);
+            color: var(--text-dark);
+        }
+        .glass-effect {
+            background: var(--glass-bg);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 20px 0 rgba(22, 163, 74, 0.4);
+            }
+            50% {
+                box-shadow: 0 0 35px 10px rgba(22, 163, 74, 0.6);
+            }
+        }
+        .cta-button {
+            background-color: var(--primary-accent);
+            transition: all 0.3s ease;
+            animation: pulse-glow 2.5s infinite;
+        }
+        .cta-button:hover {
+            background-color: var(--primary-accent-hover);
+            transform: translateY(-5px) scale(1.03);
+            animation-play-state: paused;
+        }
+        .hero-carousel .swiper-slide {
+            height: 100vh;
+            min-height: 600px;
+            position: relative;
+            overflow: hidden;
+        }
+        .swiper-pagination-bullet {
+            width: 12px;
+            height: 12px;
+            background: rgba(255,255,255,0.5);
+            opacity: 1;
+        }
+        .swiper-pagination-bullet-active {
+            background-color: var(--primary-accent) !important;
+        }
+        .font-black {
+            font-weight: 900;
+        }
+        .fill-current {
+            fill: currentColor;
+        }
+
+        /* Animated Gradient for Cards */
+        .animated-gradient-bg {
+            background: linear-gradient(-45deg, #f1f5f9, #dcfce7, #fef9c3, #f1f5f9);
+            background-size: 400% 400%;
+            animation: gradient-animation 15s ease infinite;
+        }
+
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* Destaque de palavras-chave */
+        .keyword-highlight {
+            color: var(--secondary-accent); /* Alterado para amarelo */
+            font-weight: 700;
+            text-shadow: 0 0 8px rgba(202, 138, 4, 0.6); /* Brilho amarelo */
+        }
+
+        /* Animação de brilho para o título da seção */
+        @keyframes text-glow {
+            0%, 100% {
+                text-shadow: 0 0 10px rgba(30, 41, 59, 0.2);
+            }
+            50% {
+                text-shadow: 0 0 20px rgba(30, 41, 59, 0.4);
+            }
+        }
+
+        #testimonials h2 .keyword-highlight {
+             color: var(--primary-accent);
+             text-shadow: 0 0 10px rgba(22, 163, 74, 0.5);
+        }
+
+        #testimonials h2 {
+            animation: text-glow 3s ease-in-out infinite;
+        }
+        
+        /* --- Animação "Como Funciona" --- */
+        .step-card {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+        .step-card.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .step-card:nth-child(2) { transition-delay: 0.2s; }
+        .step-card:nth-child(3) { transition-delay: 0.4s; }
+
+        /* --- ESTILOS DO MODAL DE AUTENTICAÇÃO (refatorado) --- */
+        /* Tamanho mais flexível e com conteúdo interno rolável quando necessário */
+        #auth-card { max-height: calc(100vh - 2rem); overflow: hidden; -webkit-overflow-scrolling: touch; }
+        .auth-view { min-height: 460px; display: flex; flex-direction: column; }
+        .auth-view form { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+        .auth-view form > .space-y-4 { flex: 1 1 auto; overflow: auto; min-height: 0; padding-right: 2px; }
+        .auth-view .auth-footer { margin-top: auto; }
+        .auth-tab { color: #475569; transition: all 0.2s ease-in-out; }
+        .active-tab { background-color: white; color: var(--primary-accent); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .form-input-group label { display: block; margin-bottom: 0.5rem; }
+        .form-input-group input { width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background-color: #f8fafc; transition: all 0.2s ease-in-out; }
+        .form-input-group .has-icon { padding-left: 2.5rem; }
+        .form-input-group input:focus { outline: none; border-color: var(--primary-accent); box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2); }
+        .form-input-group input.error { border-color: #ef4444; }
+        .auth-button { width: 100%; background: linear-gradient(90deg,#16a34a,#22c55e); color: white; font-weight: 800; padding: 0.9rem; border-radius: 0.75rem; transition: transform .15s ease, box-shadow .2s ease; box-shadow: 0 10px 18px -10px rgba(34,197,94,.6); }
+        .auth-button:hover { transform: translateY(-1px); box-shadow: 0 14px 24px -10px rgba(34,197,94,.7); }
+        .auth-footer { text-align: center; margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid #e2e8f0; font-size: 0.9rem; color: #475569; }
+        .error-message { color: #ef4444; font-size: 0.9rem; text-align: center; margin-top: 0.75rem; min-height: 20px; }
+        .success-message { color: #22c55e; font-size: 0.9rem; text-align: center; margin-top: 0.75rem; min-height: 20px; }
+        /* Password checklist visual */
+        .pw-check { display:flex; align-items:center; gap:.5rem; color:#475569; font-size:.9rem; }
+        .pw-check i { width:18px; height:18px; }
+        .pw-good { color:#16a34a; }
+        .pw-bad { color:#ef4444; }
+        
+        /* --- ESTILOS EFEITO 3D "TILT" --- */
+        .tilt-card { transform-style: preserve-3d; will-change: transform; }
+        
+        /* --- PARALLAX ESTRATÉGICO --- */
+        #hero-text-content { will-change: transform, opacity; }
+        
+        /* --- FAQ / EFEITO SPOTLIGHT --- */
+        .spotlight-section { position: relative; overflow: hidden; }
+        .spotlight-section > .container { position: relative; z-index: 2; }
+        .faq-item-static { background: white; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; z-index: 2; }
+        
+        @keyframes mobile-spotlight-animation {
+            0% { transform: translate(-100%, -100%); }
+            25% { transform: translate(100%, -50%); }
+            50% { transform: translate(100%, 100%); }
+            75% { transform: translate(-50%, 100%); }
+            100% { transform: translate(-100%, -100%); }
+        }
+
+        .spotlight-section::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(22, 163, 74, 0.15), transparent 60%);
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.4s ease-out;
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+            .spotlight-section:hover::before {
+                left: var(--x);
+                top: var(--y);
+                transform: translate(-50%, -50%);
+                opacity: 1;
+            }
+        }
+        @media (hover: none), (pointer: coarse) {
+            .spotlight-section::before {
+                opacity: 1;
+                animation: mobile-spotlight-animation 20s linear infinite;
+            }
+        }
+        
+        /* --- BOTÕES "UAU" --- */
+        .btn-shine { position: relative; overflow: hidden; z-index: 1; }
+        .btn-shine::before { content: ''; position: absolute; top: 0; left: -150%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent); transform: skewX(-25deg); transition: left 0.7s ease-in-out; }
+        .btn-shine:hover::before { left: 150%; }
+
+        /* --- TESTIMONIALS REFATORADO --- */
+        .testimonial-grid-card {
+            background: white;
+            border-radius: 1rem; /* rounded-2xl */
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+        .testimonial-grid-card.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        /* 3D interactive card (perf-friendly, no layout shift) */
+        .card-3d { transition: transform 120ms ease-out, box-shadow 200ms ease; will-change: transform; }
+        .card-3d--active { box-shadow: 0 12px 28px rgba(0,0,0,0.12), 0 4px 14px rgba(0,0,0,0.08); }
+        /* Performance: avoid work for offscreen content */
+        .cv-auto { content-visibility: auto; contain-intrinsic-size: 1px 1000px; }
+        /* --- Auth refinements & wizard --- */
+        #auth-card { transition: transform .18s ease; }
+        .animate-switch #auth-card { transform: scale(0.99); }
+        .pw-check { display:flex; align-items:center; gap:.5rem; color:#475569; font-size:.9rem; }
+        .pw-check i { width:18px; height:18px; }
+        .pw-good { color:#16a34a; }
+        .pw-bad { color:#ef4444; }
+        .wizard-progress { height: 6px; background: #e2e8f0; border-radius: 9999px; overflow: hidden; }
+        .wizard-bar { height: 100%; background: linear-gradient(90deg,#16a34a,#22c55e); width: 33%; transition: width .3s ease; }
+        .wizard-step { transition: opacity .2s ease, transform .2s ease; }
+        .wizard-step.hidden { opacity: 0; transform: translateY(6px); }
+        /* Payment card effects */
+        .payment-card { animation: card-in .25s ease-out forwards; box-shadow: 0 20px 40px -20px rgba(16,185,129,.4); }
+        .payment-card::after { content:''; position:absolute; inset:-2px; border-radius: 1.25rem; box-shadow: 0 0 0 0 rgba(34,197,94,.6); animation: pulse-glow 2.5s ease-in-out infinite; pointer-events:none; }
+        @keyframes card-in { from { opacity:0; transform: scale(.96) } to { opacity:1; transform: scale(1) } }
+        .btn-gradient-animated { background-size: 200% 200%; background-image: linear-gradient(90deg,#16a34a,#22c55e,#16a34a); animation: gradient-move 5s ease infinite; }
+        @keyframes gradient-move { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    </style>
+</head>
+<body class="text-slate-900">
+
+    <!-- Header -->
+    <header class="glass-effect fixed top-0 left-0 right-0 z-50">
+        <div class="container mx-auto px-4 md:px-6 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <img src="https://i.imgur.com/64Tovft.png" alt="Logotipo CalculaConfia" class="h-8 w-auto">
+                <h1 class="hidden sm:block text-2xl font-bold text-slate-800">Calcula<span class="text-[var(--primary-accent)]">Confia</span></h1>
+            </div>
+            <!-- Unified Menu -->
+            <div class="flex items-center gap-3">
+                <button id="open-login-btn" class="hidden btn-shine text-slate-800 font-bold rounded-lg hover:bg-slate-200 transition-colors text-xs py-1.5 px-3 sm:text-sm sm:py-2 sm:px-4 mr-2">Acessar Plataforma</button>
+                <a href="#preco" class="cta-button text-white font-bold rounded-lg shadow-md text-xs py-1.5 px-3 sm:text-sm sm:py-2 sm:px-4">
+                    Iniciar Análise
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Testing -->
+    <!-- Hero Section with Carousel -->
+    <main>
+        <section class="relative h-screen">
+            <div class="swiper-container hero-carousel">
+                <div class="swiper-wrapper">
+                    <div class="swiper-slide">
+                        <video class="absolute inset-0 w-full h-full object-cover" autoplay loop muted playsinline preload="auto">
+                            <source src="https://i.imgur.com/QpHVTbh.mp4" type="video/mp4">
+                        </video>
+                        <div class="absolute inset-0 bg-slate-900/70"></div>
+                    </div>
+                    <div class="swiper-slide">
+                        <video class="absolute inset-0 w-full h-full object-cover" muted playsinline preload="metadata">
+                            <source src="https://i.imgur.com/HlVQjpL.mp4" type="video/mp4">
+                        </video>
+                        <div class="absolute inset-0 bg-slate-900/70"></div>
+                    </div>
+                    <div class="swiper-slide">
+                        <video class="absolute inset-0 w-full h-full object-cover" muted playsinline preload="metadata">
+                             <source src="https://i.imgur.com/CpSZTuu.mp4" type="video/mp4">
+                        </video>
+                        <div class="absolute inset-0 bg-slate-900/70"></div>
+                    </div>
+                </div>
+                <div class="swiper-pagination"></div>
+            </div>
+            <div class="absolute inset-0 flex items-center justify-center z-10 p-4">
+                <div id="hero-text-content" class="container mx-auto text-center text-white">
+                    <span class="inline-block bg-yellow-500/20 text-yellow-300 text-xs sm:text-sm font-semibold px-4 py-1 rounded-full mb-4">Baseado na Decisão do STF - 2025 (Tema 69)</span>
+                    <h1 class="text-4xl sm:text-5xl md:text-6xl font-black mb-4 leading-tight drop-shadow-xl">É seu direito! Veja agora o quanto você poderá receber.</h1>
+                    <p class="text-lg md:text-xl text-slate-200 max-w-3xl mx-auto mb-8 drop-shadow-lg">Nossa calculadora analisa seu caso e revela sua estimativa em segundos. É simples, rápido e seguro.</p>
+                    <a href="#preco" class="cta-button text-white font-bold py-3 px-6 text-base md:py-4 md:px-10 md:text-lg rounded-lg shadow-xl inline-block">
+                        Descubra Agora
+                        <i data-lucide="arrow-right-circle" class="inline ml-2 -mt-1 w-5 h-5 md:w-6 md:h-6"></i>
+                    </a>
+                </div>
+            </div>
+        </section>
+        
+        <!-- "Como Funciona" Section -->
+        <section id="comofunciona" class="py-16 md:py-24 bg-white relative overflow-hidden cv-auto">
+            <div class="container mx-auto px-6 relative z-10">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Fácil como 1, 2, 3.</h2>
+                    <p class="text-slate-700 md:text-lg mb-12 md:mb-16">Simplificamos todo o processo para você ter sua resposta em minutos.</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8 relative">
+                    <div class="tilt-card step-card text-center p-6 md:p-8 bg-white rounded-2xl shadow-xl border-t-4 border-slate-200">
+                        <div class="text-5xl font-black text-[var(--primary-accent)] mb-4">1</div>
+                        <h3 class="text-xl font-bold mb-2">Crie seu Acesso</h3>
+                        <p class="text-slate-700">Faça um cadastro rápido e seguro para liberar o acesso à nossa plataforma de análise.</p>
+                    </div>
+                    <div class="tilt-card step-card text-center p-6 md:p-8 bg-white rounded-2xl shadow-2xl transform md:scale-110 border-t-4 border-[var(--primary-accent)]">
+                         <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--primary-accent)] text-white text-xs font-bold px-3 py-1 rounded-full">INDISPENSÁVEL</span>
+                        <div class="text-5xl font-black text-[var(--primary-accent)] mb-4">2</div>
+                        <h3 class="text-xl font-bold mb-2">Conta de Energia</h3>
+                        <p class="text-slate-700">Com uma conta de luz em mãos, preencha as informações solicitadas.</p>
+                    </div>
+                    <div class="tilt-card step-card text-center p-6 md:p-8 bg-white rounded-2xl shadow-xl border-t-4 border-slate-200">
+                        <div class="text-5xl font-black text-[var(--primary-accent)] mb-4">3</div>
+                        <h3 class="text-xl font-bold mb-2">Conheça o Valor</h3>
+                        <p class="text-slate-700">Veja em segundos a estimativa do valor a que poderá ser restituído, já com a projeção da correção.</p>
+                    </div>
+                </div>
+                 <div class="text-center mt-12 md:mt-16">
+                    <a href="#preco" class="btn-shine bg-slate-800 text-white font-bold py-3 px-8 rounded-lg text-base md:text-lg shadow-xl hover:bg-slate-900 transition-transform hover:scale-105">
+                        Liberar Minha Análise
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Apelo Emocional Section -->
+        <section class="py-16 md:py-24 bg-slate-800 text-white">
+             <div class="container mx-auto px-6">
+                <div class="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+                    <div class="relative h-80 md:h-96 rounded-lg overflow-hidden order-last md:order-first">
+                        <img src="https://i.imgur.com/r10jtz0.jpeg" alt="Pessoa analisando documentos financeiros com tranquilidade" class="w-full h-full object-cover">
+                    </div>
+                    <div>
+                        <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Um direito seu. O primeiro passo para agir.</h2>
+                        <p class="text-slate-300 md:text-lg mb-6">Empodere suas decisões financeiras. Descubra o valor estimado da sua restituição e decida, de forma inteligente, se buscará o que é seu por direito.</p>
+                        <div class="space-y-4 md:text-lg">
+                            <div class="flex items-center"><i data-lucide="check-circle-2" class="w-6 h-6 text-yellow-400 mr-3 flex-shrink-0"></i><span>A informação clara que você precisa para decidir.</span></div>
+                            <div class="flex items-center"><i data-lucide="check-circle-2" class="w-6 h-6 text-yellow-400 mr-3 flex-shrink-0"></i><span>Uma ferramenta ágil para planejar seu próximo passo.</span></div>
+                            <div class="flex items-center"><i data-lucide="check-circle-2" class="w-6 h-6 text-yellow-400 mr-3 flex-shrink-0"></i><span>A segurança de estar no controle da sua decisão.</span></div>
+                        </div>
+                         <a href="#preco" class="cta-button text-white font-bold py-3 px-6 text-base md:py-4 md:px-8 md:text-lg rounded-lg shadow-xl inline-block mt-8">
+                            Veja Agora!
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section -->
+        <section id="preco" class="spotlight-section py-16 md:py-24 cv-auto">
+            <div class="container mx-auto px-6 relative z-10">
+                <!-- Mobile First: Card on top -->
+                <div class="flex flex-col md:grid md:grid-cols-2 gap-12 md:gap-16 items-center max-w-6xl mx-auto">
+                    <!-- Pricing Card (Order 1 on Mobile) -->
+                    <div class="flex justify-center w-full order-1 md:order-2">
+                        <div class="tilt-card animated-gradient-bg rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md border-t-4 border-[var(--primary-accent)]">
+                             <div class="flex items-center justify-center space-x-3 md:space-x-4 mb-6 pt-8">
+                                 <p class="text-2xl md:text-3xl font-medium text-slate-500 line-through">R$10</p>
+                                 <p class="text-5xl md:text-6xl font-black text-green-600">R$5<span class="text-lg md:text-xl font-medium text-slate-600">,00</span></p>
+                            </div>
+                            <p class="text-slate-600 mb-8 text-center">Pagamento único. Sem mensalidades.</p>
+                            <ul class="text-left space-y-4 mb-8 text-sm md:text-base">
+                                <li class="flex items-center"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-500 mr-3 flex-shrink-0"></i><span><span class="font-bold">3 Análises</span> com nossa calculadora avançada</span></li>
+                                <li class="flex items-center"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-500 mr-3 flex-shrink-0"></i><span>Acesso <span class="font-bold">à plataforma</span> e atualizações</span></li>
+                                <li class="flex items-center"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-500 mr-3 flex-shrink-0"></i><span>Histórico de consultas para seu controle</span></li>
+                                <li class="flex items-center"><i data-lucide="gift" class="w-5 h-5 text-green-500 mr-3 flex-shrink-0"></i><span>Indique um amigo e <span class="font-bold">ganhe 1 análise grátis</span>!</span></li>
+                            </ul>
+                            <a href="#" id="unlock-cta" class="w-full cta-button text-white font-bold py-3 md:py-4 text-base md:text-lg rounded-lg shadow-xl flex items-center justify-center">
+                                Desbloquear Análise por R$5
+                            </a>
+                        </div>
+                    </div>
+                    <!-- Text Content (Order 2 on Mobile, but revealed) -->
+                    <div class="text-left w-full order-2 md:order-1">
+                        <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Acesso Imediato. Potencial Imenso.</h2>
+                        <div id="pricing-details" class="transition-all duration-500 ease-in-out overflow-hidden max-h-0 md:max-h-full">
+                            <p class="text-slate-700 md:text-lg mb-8">Antes de continuar, entenda por que este é um investimento inteligente.</p>
+                            <div class="space-y-6">
+                                <div class="flex items-start space-x-4">
+                                    <i data-lucide="alert-triangle" class="w-10 h-10 md:w-12 md:h-12 text-yellow-500 flex-shrink-0 mt-1"></i>
+                                    <div>
+                                        <h3 class="font-bold text-lg md:text-xl">O Problema Real</h3>
+                                        <p class="text-slate-600">O STF decidiu: a cobrança de PIS/COFINS sobre o ICMS na sua conta de luz foi <strong>ilegal</strong>. Por anos, você pagou a mais sem saber.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start space-x-4">
+                                    <i data-lucide="calculator" class="w-10 h-10 md:w-12 md:h-12 text-green-600 flex-shrink-0 mt-1"></i>
+                                    <div>
+                                        <h3 class="font-bold text-lg md:text-xl">A Solução Simples</h3>
+                                        <p class="text-slate-600">Nossa plataforma faz o trabalho complexo: calcula o valor estimado que você pode ter a receber, com a devida correção monetária. É a informação que você precisa, de forma clara.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start space-x-4">
+                                     <i data-lucide="key-round" class="w-10 h-10 md:w-12 md:h-12 text-slate-600 flex-shrink-0 mt-1"></i>
+                                    <div>
+                                        <h3 class="font-bold text-lg md:text-xl">O Investimento Inteligente</h3>
+                                        <p class="text-slate-600">Por um valor simbólico, você destrava o acesso à informação que mostrará o valor estimado a ser restituido. Esse é o primeiro e mais importante passo para sua tomada de decisão em reaver seu dinheiro.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                         <!-- Mobile Toggle Button -->
+                        <button id="pricing-details-toggle" class="mt-6 font-semibold text-green-600 flex items-center mx-auto md:hidden group">
+                            <span>Entenda o porquê</span>
+                            <i data-lucide="chevron-down" class="w-5 h-5 ml-2 transition-transform duration-300"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Referral Section -->
+        <section id="referral" class="py-16 bg-slate-50 cv-auto">
+            <div class="container mx-auto px-6 text-center max-w-3xl">
+                <i data-lucide="gift" class="w-12 h-12 text-yellow-500 mx-auto mb-4"></i>
+                <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Gostou? Indique e Ganhe!</h2>
+                <p class="text-slate-700 md:text-lg">Transforme sua satisfação em mais oportunidades. Para cada amigo que você indicar e que se tornar cliente, <strong class="text-slate-900">você ganha 1 análise extra, totalmente grátis.</strong> É a nossa forma de agradecer por confiar em nosso trabalho.</p>
+            </div>
+        </section>
+
+        <!-- Testimonials Section -->
+        <section id="testimonials" class="py-16 md:py-24 bg-white relative overflow-hidden cv-auto">
+            <div class="container mx-auto px-6 relative z-10">
+                <h2 class="text-3xl sm:text-4xl font-extrabold mb-4 text-center">Milhares de Brasileiros <span class="keyword-highlight">Já Confiam</span></h2>
+                <p class="text-slate-700 md:text-lg max-w-2xl mx-auto mb-12 md:mb-16 text-center">Veja o que alguns de nossos usuários estão dizendo sobre a experiência com a <strong class="font-semibold text-slate-800">CalculaConfia</strong>.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div class="testimonial-grid-card">
+                        <div class="flex items-center mb-4">
+                            <div class="w-14 h-14 rounded-full mr-4 bg-slate-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-slate-600">CS</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Carlos Silva</p>
+                                <p class="text-sm text-slate-600">São Paulo, SP</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                            <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"Fiquei <span class="keyword-highlight">chocado com o valor</span> que tinha a receber. O processo foi <span class="keyword-highlight">ridiculamente fácil</span>. Paguei os 5 reais e <span class="keyword-highlight">valeu cada centavo</span>."</p>
+                    </div>
+                    <div class="testimonial-grid-card">
+                        <div class="flex items-center mb-4">
+                            <div class="w-14 h-14 rounded-full mr-4 bg-green-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-green-700">JM</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Juliana Martins</p>
+                                <p class="text-sm text-slate-600">Belo Horizonte, MG</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                             <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"Sempre achei que isso era <span class="keyword-highlight">complicado demais</span>. A plataforma me deu o <span class="keyword-highlight">número exato em minutos</span>. <span class="keyword-highlight">Recomendo para todo mundo!</span>"</p>
+                    </div>
+                    <div class="testimonial-grid-card">
+                       <div class="flex items-center mb-4">
+                            <div class="w-14 h-14 rounded-full mr-4 bg-slate-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-slate-600">RM</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Ricardo Mendes</p>
+                                <p class="text-sm text-slate-600">Rio de Janeiro, RJ</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                             <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"Usei para mim e para minha mãe. A <span class="keyword-highlight">clareza da informação</span> é o que mais impressiona. <span class="keyword-highlight">Sem enrolação, direto ao ponto.</span>"</p>
+                    </div>
+                    <div class="testimonial-grid-card">
+                       <div class="flex items-center mb-4">
+                             <div class="w-14 h-14 rounded-full mr-4 bg-green-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-green-700">AP</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Ana Pereira</p>
+                                <p class="text-sm text-slate-600">Salvador, BA</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                             <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"Uma <span class="keyword-highlight">ferramenta essencial!</span> O valor que paguei foi <span class="keyword-highlight">simbólico</span> perto da <span class="keyword-highlight">informação valiosa</span> que recebi. Já indiquei pra família toda."</p>
+                    </div>
+                    <div class="testimonial-grid-card">
+                        <div class="flex items-center mb-4">
+                             <div class="w-14 h-14 rounded-full mr-4 bg-slate-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-slate-600">LC</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Lucas Costa</p>
+                                <p class="text-sm text-slate-600">Curitiba, PR</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                             <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"<span class="keyword-highlight">Totalmente seguro e confiável.</span> Tinha receio, mas a plataforma é super profissional. O <span class="keyword-highlight">resultado sai na hora</span>, impressionante."</p>
+                    </div>
+                    <div class="testimonial-grid-card">
+                       <div class="flex items-center mb-4">
+                             <div class="w-14 h-14 rounded-full mr-4 bg-green-200 flex items-center justify-center flex-shrink-0"><span class="text-xl font-bold text-green-700">SA</span></div>
+                            <div>
+                                <p class="font-bold text-lg">Sofia Almeida</p>
+                                <p class="text-sm text-slate-600">Fortaleza, CE</p>
+                            </div>
+                        </div>
+                        <div class="flex mb-4 text-yellow-500">
+                             <i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i><i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                        </div>
+                        <p class="text-slate-700">"Finalmente uma <span class="keyword-highlight">forma clara de entender</span> esse direito. <span class="keyword-highlight">Valeu muito a pena</span> o pequeno investimento para ter essa estimativa em mãos."</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section id="faq" class="spotlight-section py-16 md:py-24 bg-slate-100">
+            <div class="container mx-auto px-6 max-w-4xl relative z-10">
+                 <h2 class="text-3xl sm:text-4xl font-extrabold mb-12 text-center">Suas Dúvidas, Nossas Respostas.</h2>
+                 <div class="space-y-4">
+                    <div class="faq-item-static p-6 bg-white rounded-lg">
+                        <h3 class="flex items-center gap-3 font-bold text-lg text-slate-800 mb-2">
+                            <i data-lucide="help-circle" class="w-6 h-6 text-green-600 flex-shrink-0"></i>
+                            <span>Por que só agora eu tenho esse direito?</span>
+                        </h3>
+                        <p class="pl-9 text-slate-700 text-sm md:text-base">
+                            Este direito nasceu de uma longa batalha judicial que chegou ao Supremo Tribunal Federal (STF). A decisão final e as regras para a devolução foram confirmadas recentemente. Ou seja, é um direito recém-estabelecido e agora é o momento perfeito para você buscar o que é seu.
+                        </p>
+                    </div>
+                     <div class="faq-item-static p-6 bg-white rounded-lg">
+                        <h3 class="flex items-center gap-3 font-bold text-lg text-slate-800 mb-2">
+                            <i data-lucide="help-circle" class="w-6 h-6 text-green-600 flex-shrink-0"></i>
+                            <span>O que a calculadora realmente faz?</span>
+                        </h3>
+                        <p class="pl-9 text-slate-700 text-sm md:text-base">
+                            Nossa calculadora é o cérebro da operação. Ela aplica a fórmula de PIS/COFINS sobre o ICMS, projeta a correção pela taxa Selic ao longo de anos e entrega uma estimativa muito mais precisa e realista do que um cálculo manual. Ela traduz o "juridiquês" financeiro em um número claro para você.
+                        </p>
+                    </div>
+                     <div class="faq-item-static p-6 bg-white rounded-lg">
+                        <h3 class="flex items-center gap-3 font-bold text-lg text-slate-800 mb-2">
+                            <i data-lucide="help-circle" class="w-6 h-6 text-green-600 flex-shrink-0"></i>
+                            <span>Não guardei minhas contas antigas. E agora?</span>
+                        </h3>
+                        <p class="pl-9 text-slate-700 text-sm md:text-base">
+                           Não se preocupe, essa é a realidade da maioria das pessoas. Por isso, pedimos apenas o **valor médio** do ICMS de uma conta recente. Nossa calculadora usa essa média para fazer uma projeção inteligente para os últimos anos. Simples assim.
+                        </p>
+                    </div>
+                     <div class="faq-item-static p-6 bg-white rounded-lg">
+                        <h3 class="flex items-center gap-3 font-bold text-lg text-slate-800 mb-2">
+                            <i data-lucide="help-circle" class="w-6 h-6 text-green-600 flex-shrink-0"></i>
+                            <span>Qual a vantagem real de usar a plataforma?</span>
+                        </h3>
+                        <p class="pl-9 text-slate-700 text-sm md:text-base">
+                            **Tempo, dinheiro e paz de espírito.** Tentar fazer isso sozinho é um labirinto de planilhas e regras fiscais. Nossa plataforma te dá uma resposta precisa em segundos, por um custo mínimo. É a forma mais inteligente de tomar uma decisão informada sobre um direito que pode valer muito a pena.
+                        </p>
+                    </div>
+                 </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal-overlay" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4 hidden">
+        <div id="auth-card" class="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
+
+            <!-- Close Control (texto vermelho no canto superior direito) -->
+            <button id="auth-close-text" type="button" class="absolute top-4 right-4 text-red-500 text-sm font-semibold hover:underline z-10" aria-label="Fechar janela">Fechar janela</button>
+
+            <!-- Loading Spinner -->
+            <div id="auth-spinner" class="absolute inset-0 bg-white/80 flex items-center justify-center hidden z-20">
+                <div class="w-12 h-12 border-4 border-slate-200 border-t-green-600 rounded-full animate-spin"></div>
+            </div>
+
+            <!-- Card Header -->
+            <div class="p-6 border-b border-slate-200 text-center">
+                <img src="https://i.imgur.com/64Tovft.png" alt="Logotipo CalculaConfia" class="h-10 w-auto mx-auto mb-4" loading="lazy" decoding="async">
+                <div class="inline-flex bg-slate-100 rounded-lg p-1">
+                    <button data-tab="login" class="auth-tab active-tab px-6 py-1.5 font-semibold text-sm rounded-md">Entrar</button>
+                    <button data-tab="register" class="auth-tab px-6 py-1.5 font-semibold text-sm rounded-md">Cadastrar</button>
+                </div>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-view" class="p-8 auth-view">
+                <form id="login-form">
+                    <div class="space-y-4">
+                        <div class="form-input-group">
+                            <label for="login-email" class="text-sm font-medium text-slate-700">E-mail</label>
+                            <div class="relative">
+                                <i data-lucide="mail" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="email" id="login-email" class="has-icon" placeholder="seu@email.com" required>
+                            </div>
+                        </div>
+                        <div class="form-input-group">
+                            <label for="login-password" class="text-sm font-medium text-slate-700">Senha</label>
+                            <div class="relative">
+                                <i data-lucide="lock" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="password" id="login-password" class="has-icon" placeholder="********" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="login-error" class="error-message"></div>
+                    <div id="login-success" class="success-message"></div>
+                    <button type="submit" class="auth-button mt-6">Entrar</button>
+                    <div class="text-center mt-4">
+                        <a href="#" id="forgot-password-link" class="text-sm font-medium text-green-600 hover:text-green-700">Esqueci minha senha</a>
+                    </div>
+                </form>
+                <div class="auth-footer">
+                    <p>Ainda não tem conta? <a href="#" data-tab-link="register" class="font-bold text-green-600">Cadastrar</a></p>
+                </div>
+            </div>
+
+            <!-- Register Form (Wizard) -->
+            <div id="register-view" class="p-8 hidden auth-view">
+                <form id="register-form">
+                    <div class="text-center mb-4">
+                      <h3 class="text-xl font-extrabold text-slate-800">Antes de começarmos, vamos criar sua conta</h3>
+                      <p class="text-slate-600 text-sm">Leva menos de 1 minuto. Depois você já segue para a sua análise.</p>
+                    </div>
+                    <div class="wizard-progress mb-4"><div id="reg-progress" class="wizard-bar"></div></div>
+                    <div id="reg-step-1" class="wizard-step">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="form-input-group">
+                                <label for="register-firstname" class="text-sm font-medium text-slate-700">Nome</label>
+                                <input type="text" id="register-firstname" placeholder="Seu nome" required>
+                            </div>
+                            <div class="form-input-group">
+                                <label for="register-lastname" class="text-sm font-medium text-slate-700">Sobrenome</label>
+                                <input type="text" id="register-lastname" placeholder="Seu sobrenome" required>
+                            </div>
+                        </div>
+                        <button type="button" id="reg-next-1" class="auth-button mt-6">Próximo</button>
+                    </div>
+                    <div id="reg-step-2" class="wizard-step hidden">
+                        <div class="form-input-group">
+                            <label for="register-email" class="text-sm font-medium text-slate-700">Nos diga seu melhor e‑mail</label>
+                            <div class="relative">
+                                <i data-lucide="mail" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="email" id="register-email" class="has-icon" placeholder="seu@email.com" required>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 mt-6">
+                          <button type="button" id="reg-back-2" class="w-1/2 bg-slate-200 text-slate-800 font-semibold py-2.5 rounded-lg">Voltar</button>
+                          <button type="button" id="reg-next-2" class="w-1/2 auth-button">Próximo</button>
+                        </div>
+                    </div>
+                    <div id="reg-step-3" class="wizard-step hidden">
+                        <div class="form-input-group">
+                            <label for="register-password" class="text-sm font-medium text-slate-700">Crie sua senha</label>
+                            <div class="relative">
+                                <i data-lucide="lock" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="password" id="register-password" class="has-icon" placeholder="Mínimo 6 dígitos" required>
+                            </div>
+                            <div id="password-feedback" class="mt-2 text-xs text-slate-500" aria-live="polite"></div>
+                        </div>
+                        <div class="form-input-group">
+                            <label for="register-password-confirm" class="text-sm font-medium text-slate-700">Confirmar senha</label>
+                            <div class="relative">
+                                <i data-lucide="lock" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="password" id="register-password-confirm" class="has-icon" placeholder="Confirme sua senha" required disabled>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 mt-6">
+                          <button type="button" id="reg-back-3" class="w-1/2 bg-slate-200 text-slate-800 font-semibold py-2.5 rounded-lg">Voltar</button>
+                          <button type="submit" id="reg-create-btn" class="w-1/2 auth-button">Criar Conta</button>
+                        </div>
+                    </div>
+                    <div id="register-error" class="error-message"></div>
+                </form>
+                <div class="auth-footer"><p>Já tem conta? <a href="#" data-tab-link="login" class="font-bold text-green-600">Entrar</a></p></div>
+            </div>
+
+            <!-- Verify Account Form -->
+            <div id="verify-view" class="p-8 hidden auth-view">
+                <form id="verify-form">
+                    <h3 class="font-bold text-center text-slate-800 mb-2">Verificar Conta</h3>
+                    <p class="text-center text-sm text-slate-600 mb-6">Enviamos um código de 6 dígitos para seu e-mail.</p>
+                    <div class="space-y-4">
+                        <div class="form-input-group">
+                            <label for="verify-email" class="text-sm font-medium text-slate-700">E-mail</label>
+                            <div class="relative">
+                                <i data-lucide="mail" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="email" id="verify-email" class="has-icon" placeholder="seu@email.com" required>
+                            </div>
+                        </div>
+                        <div class="form-input-group">
+                            <label for="verify-code" class="text-sm font-medium text-slate-700">Código de Verificação</label>
+                            <div class="relative">
+                                <i data-lucide="key-round" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input type="text" id="verify-code" class="has-icon" placeholder="Ex: 123456" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="verify-error" class="error-message"></div>
+                    <div id="verify-success" class="success-message"></div>
+                    <button type="submit" class="auth-button mt-6">Verificar Conta</button>
+                    <div class="text-center mt-4">
+                        <button id="resend-code-btn" type="button" class="text-sm font-medium text-green-600 hover:text-green-700">Reenviar código</button>
+                    </div>
+                </form>
+                <div class="auth-footer">
+                    <p><a href="#" data-tab-link="login" class="font-bold text-green-600">Voltar para o Login</a></p>
+                </div>
+            </div>
+            
+            <!-- Forgot Password Form -->
+            <div id="forgot-view" class="p-8 hidden">
+                 <form id="forgot-form">
+                    <h3 class="font-bold text-center text-slate-800 mb-2">Recuperar Senha</h3>
+                    <p class="text-center text-sm text-slate-600 mb-6">Insira seu e-mail para receber o link de redefinição.</p>
+                    <div class="form-input-group">
+                        <label for="forgot-email" class="text-sm font-medium text-slate-700">E-mail</label>
+                        <div class="relative">
+                            <i data-lucide="mail" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                            <input type="email" id="forgot-email" class="has-icon" placeholder="seu@email.com" required>
+                        </div>
+                    </div>
+                    <div id="forgot-error" class="error-message"></div>
+                    <div id="forgot-success" class="success-message"></div>
+                    <button type="submit" class="auth-button mt-6">Enviar Redefinição</button>
+                 </form>
+                 <div class="auth-footer">
+                    <p><a href="#" data-tab-link="login" class="font-bold text-green-600">Voltar para o Login</a></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Payment Status Overlay -->
+    <div id="payment-status-overlay" class="hidden fixed inset-0 z-[70] bg-slate-900/70 px-4 flex items-center justify-center">
+      <div data-role="card" class="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 md:p-8 text-center">
+        <button type="button" data-role="close" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600" title="Fechar aviso">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+        <i data-role="icon" data-lucide="info" class="w-12 h-12 text-slate-500 mx-auto mb-4"></i>
+        <h2 data-role="title" class="text-xl font-bold mb-2">Status do pagamento</h2>
+        <p data-role="message" class="text-slate-700">Estamos analisando as informações do seu pagamento.</p>
+        <div data-role="status" class="hidden mt-4 p-3 rounded-lg bg-slate-100 text-slate-700 text-sm"></div>
+        <div class="mt-6 flex flex-col sm:flex-row gap-3">
+          <button data-role="primary" class="flex-1 font-semibold py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Continuar</button>
+          <button data-role="secondary" class="flex-1 font-semibold py-2.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Card Overlay -->
+    <div id="payment-card-overlay" class="fixed inset-0 z-[60] hidden">
+      <div class="absolute inset-0 bg-black/60"></div>
+      <div class="relative z-10 min-h-full flex items-center justify-center p-4">
+        <div class="payment-card bg-white w-full max-w-lg md:max-w-xl rounded-2xl shadow-2xl p-8 md:p-10 border border-green-200">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-2xl font-extrabold text-slate-800">Comprar Créditos</h3>
+            <button id="payment-card-close" class="text-slate-500 hover:text-slate-700" title="Fechar">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="bg-green-50 border border-green-100 text-green-800 rounded-xl p-4 mb-6">
+            <p class="font-bold">Desbloqueie agora sua análise exclusiva por apenas R$5!</p>
+            <p class="text-sm mt-1">Ganhe acesso imediato e descubra oportunidades que você não pode perder. <strong>Oferta limitada</strong>, aproveite enquanto está disponível.</p>
+          </div>
+
+          <div id="payment-card-status" class="hidden p-3 rounded-lg bg-slate-100 text-slate-700 text-sm mb-4"></div>
+
+          <button id="buy-credits-btn" class="w-full btn-gradient-animated text-white font-bold py-4 md:py-5 rounded-xl transition transform hover:scale-[1.05] shadow-lg hover:shadow-2xl">
+            Comprar créditos!
+          </button>
+
+          <div class="mt-4 text-center">
+            <button id="check-balance-btn" class="text-sm font-medium text-green-700 hover:text-green-800">Já paguei, verificar saldo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card flutuante de sessão -->
+    <div id="session-fab" class="fixed bottom-4 left-4 z-[70]">
+      <div id="session-toggle" class="cursor-pointer bg-white/90 border border-slate-200 shadow-lg rounded-full px-3 py-2 flex items-center gap-2">
+        <i data-lucide="user" class="w-4 h-4 text-green-600"></i>
+        <span id="session-status" class="text-xs font-semibold text-slate-700">Não logado</span>
+      </div>
+      <div id="session-panel" class="hidden mt-2 bg-white/95 border border-slate-200 rounded-xl p-3 shadow-2xl w-64">
+        <p id="session-name" class="text-sm font-semibold text-slate-800 mb-2">Você está logado</p>
+        <button id="session-logout" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg">Sair</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-white py-12 md:py-16">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Não deixe essa oportunidade passar.</h2>
+            <p class="text-slate-300 max-w-2xl mx-auto mb-8">O primeiro passo para descobrir seu potencial de restituição custa apenas R$5. Comece agora.</p>
+            <a href="#preco" class="cta-button text-white font-bold py-3 px-6 text-base md:py-4 md:px-10 md:text-lg rounded-lg shadow-xl inline-block mb-12">
+                Sim, Quero Minha Análise
+            </a>
+            <div class="border-t border-slate-700 pt-8">
+                 <p class="text-slate-400 max-w-3xl mx-auto text-xs sm:text-sm mb-6">
+                    <strong>Aviso Legal:</strong> Nosso cálculo estimativo é válido em todo o território nacional e restrito a unidades consumidoras residenciais.A CalculaConfia é uma ferramenta de software para estimativa e não constitui aconselhamento jurídico. Os resultados são baseados em dados públicos e nas informações inseridas pelo usuário. Para iniciar um processo de restituição, consulte um advogado.
+                </p>
+                <p class="text-slate-500 text-xs">© 2025 Torres Project. Todos os direitos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ENV config as JSON (safer for CSP) -->
+    <script type="application/json" id="env-config">{"NEXT_PUBLIC_API_URL":"https://calculaconfia-production.up.railway.app/api/v1","NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY":"APP_USR-07c4af2e-52c5-4b7e-b46c-94715c52e515"}</script>
+    <!-- New modular scripts (do not change behavior) -->
+    <script src="land_page.js" defer></script>
+    </body>
+    </html>

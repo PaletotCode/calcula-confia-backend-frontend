@@ -1,0 +1,720 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useMutation } from "@tanstack/react-query";
+import clsx from "clsx";
+import {
+  register as registerRequest,
+  sendVerificationCode,
+  verifyAccount,
+  extractErrorMessage,
+  type RegisterPayload,
+} from "@/lib/api";
+import useAuth from "@/hooks/useAuth";
+import { LucideIcon } from "@/components/LucideIcon";
+
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  defaultView?: "login" | "register" | "verify";
+}
+
+type AuthView = "login" | "register" | "verify" | "forgot";
+
+const REGISTER_STEPS = ["Dados pessoais", "Contato", "Senha"];
+
+export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalProps) {
+  const { login } = useAuth();
+
+  const [activeView, setActiveView] = useState<AuthView>(defaultView);
+  const [registerStep, setRegisterStep] = useState(0);
+  const [loginError, setLoginError] = useState("");
+  const [loginSuccess, setLoginSuccess] = useState("");
+  const [registerError, setRegisterError] = useState("");
+  const [registerSuccess, setRegisterSuccess] = useState("");
+  const [verifyError, setVerifyError] = useState("");
+  const [verifySuccess, setVerifySuccess] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotError, setForgotError] = useState("");
+
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [registerForm, setRegisterForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    referralCode: "",
+  });
+  const [verifyForm, setVerifyForm] = useState({ email: "", code: "" });
+  const [forgotEmail, setForgotEmail] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveView(defaultView);
+    }
+  }, [isOpen, defaultView]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setRegisterStep(0);
+      setLoginError("");
+      setLoginSuccess("");
+      setRegisterError("");
+      setRegisterSuccess("");
+      setVerifyError("");
+      setVerifySuccess("");
+      setForgotMessage("");
+      setForgotError("");
+      setLoginForm({ email: "", password: "" });
+      setRegisterForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        referralCode: "",
+      });
+      setVerifyForm({ email: "", code: "" });
+      setForgotEmail("");
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose]);
+
+  const loginMutation = useMutation({
+    mutationFn: async () => {
+      await login({ email: loginForm.email.trim(), password: loginForm.password });
+    },
+    onSuccess: () => {
+      setLoginSuccess("Login realizado com sucesso! Redirecionando...");
+      setLoginError("");
+      setTimeout(() => {
+        onClose();
+      }, 600);
+    },
+    onError: (error: unknown) => {
+      setLoginSuccess("");
+      setLoginError(extractErrorMessage(error));
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: async () => {
+      const payload: RegisterPayload = {
+        email: registerForm.email.trim(),
+        password: registerForm.password,
+        first_name: registerForm.firstName.trim(),
+        last_name: registerForm.lastName.trim(),
+        applied_referral_code: registerForm.referralCode.trim() || undefined,
+      };
+      await registerRequest(payload);
+      await sendVerificationCodeMutation.mutateAsync(payload.email);
+      return payload.email;
+    },
+    onSuccess: (email) => {
+      setRegisterError("");
+      setRegisterSuccess(
+        "Conta criada com sucesso! Enviamos um código de verificação para o seu e-mail."
+      );
+      setActiveView("verify");
+      setVerifyForm((prev) => ({ ...prev, email }));
+    },
+    onError: (error: unknown) => {
+      setRegisterSuccess("");
+      setRegisterError(extractErrorMessage(error));
+    },
+  });
+
+  const sendVerificationCodeMutation = useMutation({
+    mutationFn: (email: string) => sendVerificationCode(email),
+    onError: (error: unknown) => {
+      setVerifyError(extractErrorMessage(error));
+    },
+    onSuccess: () => {
+      setVerifyError("");
+      setVerifySuccess("Código reenviado com sucesso! Confira seu e-mail.");
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: () =>
+      verifyAccount({
+        email: verifyForm.email.trim(),
+        code: verifyForm.code.trim(),
+      }),
+    onSuccess: () => {
+      setVerifyError("");
+      setVerifySuccess("Conta verificada! Você já pode fazer login.");
+      setTimeout(() => {
+        setActiveView("login");
+      }, 600);
+    },
+    onError: (error: unknown) => {
+      setVerifySuccess("");
+      setVerifyError(extractErrorMessage(error));
+    },
+  });
+
+  const isPasswordValid = useMemo(() => registerForm.password.length >= 6, [registerForm.password]);
+  const passwordsMatch = useMemo(
+    () => registerForm.password !== "" && registerForm.password === registerForm.confirmPassword,
+    [registerForm.password, registerForm.confirmPassword]
+  );
+
+  const handleOverlayClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) {
+        onClose();
+      }
+    },
+    [onClose]
+  );
+
+  const handleLoginSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoginError("");
+    setLoginSuccess("");
+    loginMutation.mutate();
+  };
+
+  const handleRegisterNext = () => {
+    if (registerStep === 0) {
+      if (!registerForm.firstName.trim() || !registerForm.lastName.trim()) {
+        setRegisterError("Informe nome e sobrenome.");
+        return;
+      }
+    }
+    if (registerStep === 1) {
+      if (!registerForm.email.trim()) {
+        setRegisterError("Informe um e-mail válido.");
+        return;
+      }
+    }
+    setRegisterError("");
+    setRegisterStep((step) => Math.min(step + 1, REGISTER_STEPS.length - 1));
+  };
+
+  const handleRegisterBack = () => {
+    setRegisterError("");
+    setRegisterStep((step) => Math.max(step - 1, 0));
+  };
+
+  const handleRegisterSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!isPasswordValid || !passwordsMatch) {
+      setRegisterError("Verifique a senha informada.");
+      return;
+    }
+    setRegisterError("");
+    setRegisterSuccess("");
+    registerMutation.mutate();
+  };
+
+  const handleVerifySubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setVerifyError("");
+    setVerifySuccess("");
+    verifyMutation.mutate();
+  };
+
+  const handleForgotSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!forgotEmail.trim()) {
+      setForgotError("Informe um e-mail válido.");
+      return;
+    }
+    setForgotError("");
+    setForgotMessage("Enviaremos instruções para redefinição em breve.");
+  };
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      onClick={handleOverlayClick}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        id="auth-card"
+        className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 z-10 text-sm font-semibold text-red-500 hover:underline"
+        >
+          Fechar janela
+        </button>
+
+        <div className="border-b border-slate-200 p-6 text-center">
+          <img
+            src="https://i.imgur.com/64Tovft.png"
+            alt="Logotipo CalculaConfia"
+            className="mx-auto mb-4 h-10 w-auto"
+            loading="lazy"
+          />
+          <div className="inline-flex rounded-lg bg-slate-100 p-1">
+            <button
+              type="button"
+              className={clsx(
+                "auth-tab px-6 py-1.5 text-sm font-semibold rounded-md",
+                activeView === "login" && "active-tab"
+              )}
+              onClick={() => setActiveView("login")}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              className={clsx(
+                "auth-tab px-6 py-1.5 text-sm font-semibold rounded-md",
+                activeView === "register" && "active-tab"
+              )}
+              onClick={() => setActiveView("register")}
+            >
+              Cadastrar
+            </button>
+          </div>
+        </div>
+
+        {activeView === "login" && (
+          <div className="auth-view p-8">
+            <form onSubmit={handleLoginSubmit} className="flex h-full flex-col">
+              <div className="space-y-4">
+                <div className="form-input-group">
+                  <label htmlFor="login-email" className="text-sm font-medium text-slate-700">
+                    E-mail
+                  </label>
+                  <div className="relative">
+                    <LucideIcon name="Mail" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="login-email"
+                      type="email"
+                      required
+                      className="has-icon"
+                      placeholder="seu@email.com"
+                      value={loginForm.email}
+                      onChange={(event) =>
+                        setLoginForm((prev) => ({ ...prev, email: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="form-input-group">
+                  <label htmlFor="login-password" className="text-sm font-medium text-slate-700">
+                    Senha
+                  </label>
+                  <div className="relative">
+                    <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="login-password"
+                      type="password"
+                      required
+                      className="has-icon"
+                      placeholder="********"
+                      value={loginForm.password}
+                      onChange={(event) =>
+                        setLoginForm((prev) => ({ ...prev, password: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="error-message" aria-live="polite">
+                {loginError}
+              </div>
+              <div className="success-message" aria-live="polite">
+                {loginSuccess}
+              </div>
+              <button
+                type="submit"
+                className="auth-button mt-6"
+                disabled={loginMutation.isPending}
+              >
+                {loginMutation.isPending ? "Entrando..." : "Entrar"}
+              </button>
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => setActiveView("forgot")}
+                  className="text-sm font-medium text-green-600 hover:text-green-700"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+            </form>
+            <div className="auth-footer">
+              <p>
+                Ainda não tem conta?{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveView("register")}
+                  className="font-bold text-green-600"
+                >
+                  Cadastrar
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeView === "register" && (
+          <div className="auth-view p-8">
+            <form onSubmit={handleRegisterSubmit} className="flex h-full flex-col">
+              <div className="text-center">
+                <h3 className="text-xl font-extrabold text-slate-800">
+                  Antes de começarmos, vamos criar sua conta
+                </h3>
+                <p className="text-sm text-slate-600">
+                  Leva menos de 1 minuto. Depois você já segue para a sua análise.
+                </p>
+              </div>
+              <div className="wizard-progress my-4">
+                <div
+                  className="wizard-bar"
+                  style={{ width: `${((registerStep + 1) / REGISTER_STEPS.length) * 100}%` }}
+                />
+              </div>
+
+              {registerStep === 0 && (
+                <div className="wizard-step flex-1 space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="form-input-group">
+                      <label htmlFor="register-firstname" className="text-sm font-medium text-slate-700">
+                        Nome
+                      </label>
+                      <input
+                        id="register-firstname"
+                        type="text"
+                        required
+                        placeholder="Seu nome"
+                        value={registerForm.firstName}
+                        onChange={(event) =>
+                          setRegisterForm((prev) => ({ ...prev, firstName: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="form-input-group">
+                      <label htmlFor="register-lastname" className="text-sm font-medium text-slate-700">
+                        Sobrenome
+                      </label>
+                      <input
+                        id="register-lastname"
+                        type="text"
+                        required
+                        placeholder="Seu sobrenome"
+                        value={registerForm.lastName}
+                        onChange={(event) =>
+                          setRegisterForm((prev) => ({ ...prev, lastName: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <button type="button" className="auth-button mt-6" onClick={handleRegisterNext}>
+                    Próximo
+                  </button>
+                </div>
+              )}
+
+              {registerStep === 1 && (
+                <div className="wizard-step flex-1 space-y-4">
+                  <div className="form-input-group">
+                    <label htmlFor="register-email" className="text-sm font-medium text-slate-700">
+                      Nos diga seu melhor e-mail
+                    </label>
+                    <div className="relative">
+                      <LucideIcon name="Mail" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-email"
+                        type="email"
+                        required
+                        className="has-icon"
+                        placeholder="seu@email.com"
+                        value={registerForm.email}
+                        onChange={(event) =>
+                          setRegisterForm((prev) => ({ ...prev, email: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="form-input-group">
+                    <label htmlFor="register-referral" className="text-sm font-medium text-slate-700">
+                      Código de indicação (opcional)
+                    </label>
+                    <input
+                      id="register-referral"
+                      type="text"
+                      placeholder="Tem um código? Coloque aqui"
+                      value={registerForm.referralCode}
+                      onChange={(event) =>
+                        setRegisterForm((prev) => ({ ...prev, referralCode: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={handleRegisterBack}
+                      className="w-1/2 rounded-lg bg-slate-200 py-2.5 font-semibold text-slate-800"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRegisterNext}
+                      className="w-1/2 auth-button"
+                    >
+                      Próximo
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {registerStep === 2 && (
+                <div className="wizard-step flex-1 space-y-4">
+                  <div className="form-input-group">
+                    <label htmlFor="register-password" className="text-sm font-medium text-slate-700">
+                      Crie sua senha
+                    </label>
+                    <div className="relative">
+                      <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-password"
+                        type="password"
+                        required
+                        className="has-icon"
+                        placeholder="Mínimo 6 dígitos"
+                        value={registerForm.password}
+                        onChange={(event) =>
+                          setRegisterForm((prev) => ({ ...prev, password: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500" aria-live="polite">
+                      {isPasswordValid ? "Ótimo! Senha forte." : "Use pelo menos 6 caracteres."}
+                    </div>
+                  </div>
+                  <div className="form-input-group">
+                    <label htmlFor="register-password-confirm" className="text-sm font-medium text-slate-700">
+                      Confirmar senha
+                    </label>
+                    <div className="relative">
+                      <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-password-confirm"
+                        type="password"
+                        required
+                        disabled={!isPasswordValid}
+                        className="has-icon"
+                        placeholder="Confirme sua senha"
+                        value={registerForm.confirmPassword}
+                        onChange={(event) =>
+                          setRegisterForm((prev) => ({ ...prev, confirmPassword: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="mt-2 text-xs" aria-live="polite">
+                      <span className={passwordsMatch ? "pw-good" : "pw-bad"}>
+                        {passwordsMatch ? "As senhas coincidem." : "As senhas precisam ser iguais."}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={handleRegisterBack}
+                      className="w-1/2 rounded-lg bg-slate-200 py-2.5 font-semibold text-slate-800"
+                    >
+                      Voltar
+                    </button>
+                    <button type="submit" className="w-1/2 auth-button" disabled={registerMutation.isPending}>
+                      {registerMutation.isPending ? "Enviando..." : "Criar Conta"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="error-message" aria-live="polite">
+                {registerError}
+              </div>
+              <div className="success-message" aria-live="polite">
+                {registerSuccess}
+              </div>
+            </form>
+            <div className="auth-footer">
+              <p>
+                Já tem conta?{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveView("login")}
+                  className="font-bold text-green-600"
+                >
+                  Entrar
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeView === "verify" && (
+          <div className="auth-view p-8">
+            <form onSubmit={handleVerifySubmit} className="flex h-full flex-col">
+              <h3 className="mb-2 text-center font-bold text-slate-800">Verificar Conta</h3>
+              <p className="mb-6 text-center text-sm text-slate-600">
+                Enviamos um código de 6 dígitos para seu e-mail.
+              </p>
+              <div className="space-y-4">
+                <div className="form-input-group">
+                  <label htmlFor="verify-email" className="text-sm font-medium text-slate-700">
+                    E-mail
+                  </label>
+                  <div className="relative">
+                    <LucideIcon name="Mail" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="verify-email"
+                      type="email"
+                      required
+                      className="has-icon"
+                      placeholder="seu@email.com"
+                      value={verifyForm.email}
+                      onChange={(event) =>
+                        setVerifyForm((prev) => ({ ...prev, email: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="form-input-group">
+                  <label htmlFor="verify-code" className="text-sm font-medium text-slate-700">
+                    Código de Verificação
+                  </label>
+                  <div className="relative">
+                    <LucideIcon name="KeyRound" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="verify-code"
+                      type="text"
+                      required
+                      maxLength={6}
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      className="has-icon"
+                      placeholder="Ex: 123456"
+                      value={verifyForm.code}
+                      onChange={(event) =>
+                        setVerifyForm((prev) => ({ ...prev, code: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="error-message" aria-live="polite">
+                {verifyError}
+              </div>
+              <div className="success-message" aria-live="polite">
+                {verifySuccess}
+              </div>
+              <button type="submit" className="auth-button mt-6" disabled={verifyMutation.isPending}>
+                {verifyMutation.isPending ? "Verificando..." : "Verificar Conta"}
+              </button>
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  className="text-sm font-medium text-green-600 hover:text-green-700"
+                  onClick={() => {
+                    if (verifyForm.email) {
+                      sendVerificationCodeMutation.mutate(verifyForm.email);
+                    } else {
+                      setVerifyError("Informe o e-mail para reenviar o código.");
+                    }
+                  }}
+                  disabled={sendVerificationCodeMutation.isPending}
+                >
+                  {sendVerificationCodeMutation.isPending ? "Reenviando..." : "Reenviar código"}
+                </button>
+              </div>
+            </form>
+            <div className="auth-footer">
+              <p>
+                <button
+                  type="button"
+                  onClick={() => setActiveView("login")}
+                  className="font-bold text-green-600"
+                >
+                  Voltar para o Login
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeView === "forgot" && (
+          <div className="auth-view p-8">
+            <form onSubmit={handleForgotSubmit} className="flex h-full flex-col">
+              <h3 className="mb-2 text-center font-bold text-slate-800">Recuperar Senha</h3>
+              <p className="mb-6 text-center text-sm text-slate-600">
+                Insira seu e-mail para receber o link de redefinição.
+              </p>
+              <div className="form-input-group">
+                <label htmlFor="forgot-email" className="text-sm font-medium text-slate-700">
+                  E-mail
+                </label>
+                <div className="relative">
+                  <LucideIcon name="Mail" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="forgot-email"
+                    type="email"
+                    required
+                    className="has-icon"
+                    placeholder="seu@email.com"
+                    value={forgotEmail}
+                    onChange={(event) => setForgotEmail(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="error-message" aria-live="polite">
+                {forgotError}
+              </div>
+              <div className="success-message" aria-live="polite">
+                {forgotMessage}
+              </div>
+              <button type="submit" className="auth-button mt-6">
+                Enviar Redefinição
+              </button>
+            </form>
+            <div className="auth-footer">
+              <p>
+                <button
+                  type="button"
+                  onClick={() => setActiveView("login")}
+                  className="font-bold text-green-600"
+                >
+                  Voltar para o Login
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default AuthModal;
