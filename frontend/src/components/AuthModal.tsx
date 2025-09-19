@@ -24,7 +24,7 @@ type AuthView = "login" | "register" | "verify" | "forgot";
 const REGISTER_STEPS = ["Dados pessoais", "Contato", "Senha"];
 
 export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalProps) {
-  const { login } = useAuth();
+  const { login, refresh } = useAuth();
 
   const [activeView, setActiveView] = useState<AuthView>(defaultView);
   const [registerStep, setRegisterStep] = useState(0);
@@ -123,16 +123,16 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         applied_referral_code: registerForm.referralCode.trim() || undefined,
       };
       await registerRequest(payload);
-      await sendVerificationCodeMutation.mutateAsync(payload.email);
-      return payload.email;
+      return payload.email.trim();
     },
     onSuccess: (email) => {
       setRegisterError("");
-      setRegisterSuccess(
-        "Conta criada com sucesso! Enviamos um código de verificação para o seu e-mail."
-      );
+      setRegisterSuccess("Conta criada! Enviamos um código de verificação para o seu e-mail.");
+      setVerifyError("");
+      setVerifySuccess("Enviamos um código de verificação. Confira seu e-mail.");
+      setVerifyForm({ email, code: "" });
       setActiveView("verify");
-      setVerifyForm((prev) => ({ ...prev, email }));
+      setRegisterStep(0);
     },
     onError: (error: unknown) => {
       setRegisterSuccess("");
@@ -157,12 +157,23 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         email: verifyForm.email.trim(),
         code: verifyForm.code.trim(),
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setVerifyError("");
-      setVerifySuccess("Conta verificada! Você já pode fazer login.");
-      setTimeout(() => {
+      setVerifySuccess("Conta verificada! Redirecionando...");
+      try {
+        await refresh();
+        setTimeout(() => {
+          setVerifySuccess("");
+          onClose();
+        }, 500);
+      } catch (error) {
+        console.error("Falha ao atualizar sessão após verificação", error);
+        setVerifySuccess("");
+        setVerifyError(
+          "Conta verificada, mas não conseguimos atualizar sua sessão automaticamente. Faça login com seu e-mail e senha."
+        );
         setActiveView("login");
-      }, 600);
+      }
     },
     onError: (error: unknown) => {
       setVerifySuccess("");

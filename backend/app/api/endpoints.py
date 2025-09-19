@@ -40,7 +40,7 @@ from ..models_schemas.schemas import (
     RequestPasswordResetRequest,
     ResetPasswordRequest,
     VerificationCodeResponse,
-    ReferralStatsResponse
+    ReferralStatsResponse,
 )
 from pydantic import BaseModel
 from ..services.main_service import (
@@ -53,33 +53,45 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+class PaymentConfirmationRequest(BaseModel):
+    payment_id: str
+    status: Optional[str] = None
+    preference_id: Optional[str] = None
+
+
+class PaymentConfirmationResponse(BaseModel):
+    payment_id: str
+    status: Optional[str] = None
+    credits_added: bool
+    already_processed: bool
+    credits_balance: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class RegistrationResponse(BaseModel):
+    message: str
+    requires_verification: bool = True
+    expires_in_minutes: int = 10
+
+
+@router.post("/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserCreate,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Registra um novo usuário (inativo até verificação por email)
+    Registra um novo usuário e envia o código de verificação por e-mail.
     """
     with LogContext(endpoint="register", email=user_data.email):
         logger.info("User registration request received")
         
         user = await UserService.register_new_user(db, user_data, request)
-        
-        
-        return UserResponse(
-            id=user.id,
-            email=user.email,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            referral_code=user.referral_code,
-            credits=user.credits,
-            is_verified=user.is_verified,
-            is_active=user.is_active,
-            is_admin=user.is_admin,
-            created_at=user.created_at
+
+        return RegistrationResponse(
+            message="Conta criada! Enviamos um código de verificação para o seu e-mail.",
+            requires_verification=not user.is_verified,
+            expires_in_minutes=10
         )
 
 
@@ -212,21 +224,49 @@ async def send_verification_code(
         return response
 
 
-@router.post("/auth/verify-account", response_model=UserResponse)
+@router.post("/auth/verify-account", response_model=Token)
 async def verify_account(
     request_data: VerifyAccountRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Verifica conta do usuário com código SMS/Email
+    Verifica conta do usuário com código SMS/Email e autentica a sessão.
     """
     with LogContext(endpoint="verify_account", email=request_data.email):
         logger.info("Account verification request received")
         
         user_response = await UserService.verify_account(db, request_data, request)
-        
-        return user_response
+
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        identifier = user_response.email or request_data.email
+        access_token = create_access_token(
+            data={"sub": identifier},
+            expires_delta=access_token_expires
+        )
+
+        cookie_kwargs = {
+            "key": "access_token",
+            "value": access_token,
+            "httponly": True,
+            "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "expires": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "secure": settings.ENVIRONMENT == "production",
+            "samesite": "none" if settings.ENVIRONMENT == "production" else "lax",
+        }
+
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+
+        response.set_cookie(**cookie_kwargs)
+
+        return Token(
+            access_token=access_token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user_info=user_response,
+            token_type="bearer"
+        )
 
 
 @router.post("/auth/request-password-reset", response_model=VerificationCodeResponse)
@@ -825,6 +865,45 @@ async def create_payment_order(current_user: User = Depends(get_current_active_u
     except Exception as e:
         logger.error("Falha ao criar ordem de pagamento.", error=str(e), user_id=current_user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Não foi possível iniciar o pagamento.")
+
+
+@router.post("/payments/confirm", response_model=PaymentConfirmationResponse)
+async def confirm_payment_status(
+    payload: PaymentConfirmationRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permite que o frontend valide e sincronize imediatamente um pagamento retornado pelo Checkout Pro."""
+    payment_id = payload.payment_id.strip()
+    if not payment_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="payment_id é obrigatório",
+        )
+
+    result = await payment_service.process_payment_and_award(
+        payment_id=payment_id,
+        db=db,
+        expected_user_id=current_user.id,
+    )
+
+    if result.detail == "unexpected_user":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pagamento não pertence ao usuário autenticado",
+        )
+
+    # Se o pagamento ainda estiver pendente, apenas informamos o status ao frontend.
+    credits_balance = await CalculationService._get_valid_credits_balance(db, current_user.id)
+
+    return PaymentConfirmationResponse(
+        payment_id=result.payment_id,
+        status=result.status,
+        credits_added=result.processed,
+        already_processed=result.already_processed,
+        credits_balance=credits_balance,
+        detail=result.detail or payload.status,
+    )
 
 
 @router.post("/payments/webhook", status_code=status.HTTP_200_OK)

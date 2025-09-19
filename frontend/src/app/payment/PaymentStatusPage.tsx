@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { LucideIcon, type IconName } from "@/components/LucideIcon";
 import useAuth from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import {
   extractCreditsFromUser,
   inferPurchaseFromUser,
 } from "@/utils/user-credits";
+import { confirmPayment } from "@/lib/api";
 
 type PaymentStatus = "success" | "pending" | "failure";
 
@@ -67,8 +68,29 @@ interface PaymentStatusPageProps {
 
 export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { refresh, user, isAuthenticated } = useAuth();
   const [hasTimedOut, setHasTimedOut] = useState(false);
+  const searchParamsKey = useMemo(
+    () => (searchParams ? searchParams.toString() : ""),
+    [searchParams]
+  );
+  const paymentContext = useMemo(() => {
+    if (!searchParamsKey) {
+      return null;
+    }
+    const params = new URLSearchParams(searchParamsKey);
+    const paymentId =
+      params.get("payment_id") ?? params.get("collection_id") ?? "";
+    if (!paymentId) {
+      return null;
+    }
+    return {
+      paymentId,
+      status: params.get("status") ?? params.get("collection_status"),
+      preferenceId: params.get("preference_id"),
+    };
+  }, [searchParamsKey]);
 
   const content = useMemo(() => STATUS_CONTENT[status], [status]);
   const credits = useMemo(() => extractCreditsFromUser(user), [user]);
@@ -140,6 +162,65 @@ export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
       router.replace("/platform");
     }
   }, [hasSuccessfulPayment, isAuthenticated, router, status]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (status !== "success") {
+      return;
+    }
+    if (!isAuthenticated) {
+      return;
+    }
+    if (!paymentContext?.paymentId) {
+      return;
+    }
+    if (hasSuccessfulPayment) {
+      return;
+    }
+
+    let disposed = false;
+
+    const runConfirmation = async () => {
+      try {
+        const response = await confirmPayment({
+          payment_id: paymentContext.paymentId,
+          status: paymentContext.status,
+          preference_id: paymentContext.preferenceId,
+        });
+        if (disposed) {
+          return;
+        }
+        if (response.credits_added || response.already_processed) {
+          await refresh();
+        }
+      } catch (error) {
+        if (!disposed) {
+          console.error("Falha ao confirmar pagamento com o Mercado Pago", error);
+        }
+      }
+    };
+
+    void runConfirmation();
+
+    const intervalId = window.setInterval(() => {
+      void runConfirmation();
+    }, 7000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    status,
+    isAuthenticated,
+    paymentContext?.paymentId,
+    paymentContext?.preferenceId,
+    paymentContext?.status,
+    hasSuccessfulPayment,
+    refresh,
+  ]);
 
   const showLoginReminder = !isAuthenticated && status !== "failure";
   const showAwaitPaymentMessage =

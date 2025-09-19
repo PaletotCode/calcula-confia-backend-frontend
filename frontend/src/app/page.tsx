@@ -347,6 +347,7 @@ export default function LandingPage() {
     let isMounted = true;
 
     const credits = extractCreditsFromUser(user);
+    const inferredPurchase = inferPurchaseFromUser(user);
     if (credits > 0) {
       if (historyState.status !== "success" || !historyState.hasPurchase) {
         setHistoryState({ status: "success", hasPurchase: true });
@@ -357,7 +358,7 @@ export default function LandingPage() {
       };
     }
 
-    if (inferPurchaseFromUser(user)) {
+    if (inferredPurchase) {
       if (historyState.status !== "success" || !historyState.hasPurchase) {
         setHistoryState({ status: "success", hasPurchase: true });
       }
@@ -372,6 +373,16 @@ export default function LandingPage() {
       return () => {
         isMounted = false;
       };
+    }
+
+    if (
+      !hasPromptedPurchase &&
+      historyState.status === "idle" &&
+      credits === 0 &&
+      !inferredPurchase
+    ) {
+      setIsPaymentCardOpen(true);
+      setHasPromptedPurchase(true);
     }
 
     if (historyState.status === "idle") {

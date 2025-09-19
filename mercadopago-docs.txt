@@ -1,0 +1,437 @@
+Configurar URLs de retorno
+A URL de retorno é o endereço para o qual o usuário é redirecionado após completar o pagamento, seja ele bem-sucedido, falho ou pendente. Esta URL deve ser uma página web controlável, como um servidor com domínio nomeado (DNS).
+
+Esse processo é configurado através do atributo back_urls no backend, na preferência de pagamento associada à sua integração. Com este atributo, você pode definir para qual site o comprador será redirecionado, seja automaticamente ou através do botão "Voltar ao site", de acordo com o estado do pagamento.
+
+Você pode configurar até três URLs de retorno diferentes, correspondendo aos cenários de pagamento pendente, sucesso ou erro.
+
+Em integrações mobile, recomendamos que as URLs de retorno sejam deep links. Para saber mais, acesse a documentação Integração para aplicações móveis.
+Definir URLs de retorno
+No seu código backend, configure a URL para a qual deseja que o Mercado Pago redirecione o usuário após a conclusão do processo de pagamento.
+
+Se preferir, você também pode configurar as URLs de retorno enviando um POST para a API Criar preferência com o atributo back_urls, especificando as URLs para as quais o comprador deve ser redirecionado após finalizar o pagamento.
+A seguir, compartilhamos exemplos de como incluir o atributo back_urls de acordo com a linguagem de programação que você está utilizando, além do detalhamento de cada um dos possíveis parâmetros.
+
+preference_data = {
+    "back_urls": {
+        "success": "https://www.seu-site/success",
+        "failure": "https://www.seu-site/failure",
+        "pending": "https://www.seu-site/pendings"
+    },
+    "auto_return": "approved"
+}
+Atributo	Descrição
+auto_return	Os compradores são redirecionados automaticamente ao site quando o pagamento é aprovado. O valor padrão é approved. O tempo de redirecionamento será de até 40 segundos e não poderá ser personalizado. Por padrão, também será exibido um botão de "Voltar ao site".
+back_urls	URL de retorno ao site. Os cenários possíveis são:
+success: URL de retorno quando o pagamento é aprovado.
+pending: URL de retorno quando o pagamento está pendente.
+failure: URL de retorno quando o pagamento é rejeitado.
+Resposta das URLs de retorno
+As back_urls fornecem vários parâmetros úteis por meio de uma solicitação GET. A seguir, apresentamos um exemplo de resposta, acompanhado de uma explicação detalhada dos parâmetros incluídos nela.
+
+GET /test?collection_id=106400160592&collection_status=rejected&payment_id=106400160592&status=rejected&external_reference=qweqweqwe&payment_type=credit_card&merchant_order_id=29900492508&preference_id=724484980-ecb2c41d-ee0e-4cf4-9950-8ef2f07d3d82&site_id=MLC&processing_mode=aggregator&merchant_account_id=null HTTP/1.1
+Host: yourwebsite.com
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: es-419,es;q=0.9
+Connection: keep-alive
+Referer: https://www.mercadopago.com/checkout/v1/payment/redirect/505f641c-cf04-4407-a7ad-8ca471419ee5/congrats/rejected/?preference-id=724484980-ecb2c41d-ee0e-4cf4-9950-8ef2f07d3d82&router-request-id=0edb64e3-d853-447a-bb95-4f810cbed7f7&p=f2e3a023dd16ac953e65c4ace82bb3ab
+Sec-Ch-Ua: "Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "macOS"
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: cross-site
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+Parâmetro	Descrição
+payment_id	ID (identificador) do pagamento do Mercado Pago.
+status	Status do pagamento. Por exemplo: approved para um pagamento aprovado ou pending para um pagamento pendente.
+external_reference	Referência para sincronização com seu sistema de pagamentos.
+merchant_order_id	Identificador (ID) único da ordem de pagamento criada no Mercado Pago.
+Resposta para meios de pagamento offline
+Os meios de pagamento offline permitem que o comprador selecione um método que exija a utilização de um ponto de pagamento físico para concluir a transação. Nesse fluxo, o Mercado Pago gera um comprovante que o comprador deve apresentar no estabelecimento para realizar o pagamento. Após essa etapa, o comprador será redirecionado para a URL definida no atributo back_urls como pending.
+
+Nesse momento, o pagamento estará em estado pendente, já que o comprador ainda precisa efetuar o pagamento presencialmente no estabelecimento indicado.
+
+Para pagamentos com o estado pending, sugerimos redirecionar o comprador para o seu site e fornecer orientações claras sobre como concluir o pagamento.
+Assim que o pagamento for realizado no ponto físico com o comprovante gerado, o Mercado Pago será notificado, e o estado do pagamento será atualizado. Recomendamos que você configure as notificações de pagamento para que seu servidor receba essas atualizações e atualize o estado do pedido na sua base de dados.
+
+
+Configurar notificações de pagamento
+As notificações Webhooks, também conhecidas como retornos de chamada web, são um método eficaz que permite aos servidores do Mercado Pago enviar informações em tempo real quando ocorre um evento específico relacionado à sua integração.
+
+Com os Webhooks, o seu sistema não precisa realizar consultas contínuas para buscar atualizações. Esse mecanismo transmite dados de maneira passiva e automática, utilizando solicitações HTTP POST. Assim, otimiza a comunicação e reduz a carga nos servidores.
+
+Consulte o fluxo geral de uma notificação no diagrama abaixo.
+
+Diagram
+
+A seguir, apresentamos um passo a passo para configurar as notificações de criação e atualização de pagamentos. Depois de configuradas, as notificações Webhook serão enviadas sempre que um pagamento for criado ou seu estado for modificado (Pendente, Rejeitado ou Aprovado).
+
+Esta documentação trata exclusivamente da configuração de notificações de pagamento, incluindo criações e atualizações, por meio do evento Pagamentos. Para obter informações sobre outros eventos de notificações disponíveis para configuração, consulte a documentação de Notificações geral.
+No processo de integração com o Mercado Pago, as notificações podem ser configuradas de duas maneiras:
+
+Tipo de Configuração	Descrição	Vantagens	Quando Usar
+Configuração através de Suas integrações	Este método permite configurar notificações diretamente do seu Painel de Desenvolvedor. Você pode configurar notificações para cada uma de suas aplicações, identificar contas distintas, se necessário, e validar a origem da notificação através de uma assinatura secreta.	- Identificação simples de contas distintas, garantindo uma gestão adequada em ambientes diversos.
+- Alta segurança ao validar a origem das notificações através de uma assinatura secreta, que garante a integridade da informação recebida.
+- Mais versátil e eficaz para manter um controle centralizado e gerenciar a comunicação com as aplicações de maneira eficiente.	Recomendado para a maioria das integrações.
+Configuração durante a criação de preferências	As notificações são configuradas para cada transação individualmente durante a criação da preferência.	- Ajustes específicos para cada transação.
+- Flexibilidade em casos de necessidade de parâmetros dinâmicos obrigatórios.
+- Ideal para integrações como plataformas de pagamento para múltiplos vendedores.	Conveniente em casos em que seja necessário enviar um query parameter dinâmico de forma obrigatória, além de ser adequado para integrações que funcionam como uma plataforma de pagamento para múltiplos vendedores.
+Importante
+As URLs configuradas durante a criação de um pagamento terão prioridade sobre aquelas configuradas através de Suas integrações.
+
+Configuração através de Suas integrações
+
+Configuração ao criar preferências
+Configuração através de Suas integrações
+Você pode configurar notificações para cada uma de suas aplicações diretamente em Suas integrações de maneira eficiente e segura. Nesta seção, explicaremos como:
+
+Indicar as URLs de notificação e configurar eventos
+Validar a origem de uma notificação
+Simular o recebimento de uma notificação
+1. Indicar URLs de notificação e configurar o evento
+Para configurar notificações Webhooks, é necessário indicar as URLs para as quais as notificações serão enviadas. Para fazer isso, siga o passo a passo abaixo:
+
+Acesse Suas integrações e selecione a aplicação integrada com o Checkout Pro para a qual você deseja ativar as notificações.
+Application
+
+No menu à esquerda, selecione Webhooks > Configurar notificações e configure a URL que será utilizada para recebê-las.
+Webhooks
+
+Selecione a aba Modo produtivo e forneça uma URL HTTPS para receber notificações com sua integração produtiva.
+URL
+
+Selecione o evento Pagamentos para receber notificações, que serão enviadas no formato JSON através de um HTTPS POST para a URL especificada anteriormente.
+Payment
+
+5.Por fim, clique em Salvar configuração. Isso gerará uma chave secreta exclusiva para a aplicação, utilizada para validar a autenticidade das notificações recebidas, assegurando que elas sejam provenientes do Mercado Pago. Vale ressaltar que essa chave não possui prazo de validade, mas recomenda-se sua renovação periódica como medida de segurança. Para renovar a chave, basta clicar no botão Restabelecer.
+
+2. Simular o recebimento da notificação
+Para garantir que as notificações sejam configuradas corretamente, é necessário simular o recebimento delas. Para isso, siga o passo a passo abaixo:
+
+Após configurar as URLs e os eventos, clique em Salvar configuração.
+Em seguida, clique em Simular para testar se a URL indicada está recebendo as notificações corretamente.
+Na tela de simulação, selecione a URL que será testada, que pode ser a URL de teste ou a de produção.
+Depois, escolha o tipo de evento e insira a identificação que será enviada no corpo da notificação (Data ID).
+Por fim, clique em Enviar teste para verificar a solicitação, a resposta fornecida pelo servidor e a descrição do evento. Você receberá uma resposta semelhante ao exemplo abaixo, que representa o body da notificação recebida em seu servidor.
+{
+  "action": "payment.updated",
+  "api_version": "v1",
+  "data": {
+    "id": "123456"
+  },
+  "date_created": "2021-11-01T02:02:02Z",
+  "id": "123456",
+  "live_mode": false,
+  "type": "payment",
+  "user_id": 724484980
+}
+3. Validar a origem da notificação
+A validação da origem de uma notificação é fundamental para assegurar a segurança e a autenticidade das informações recebidas. Este processo ajuda a prevenir fraudes e garante que apenas notificações legítimas sejam processadas.
+
+O Mercado Pago enviará ao seu servidor uma notificação semelhante ao exemplo abaixo para um alerta do tópico payment. Neste exemplo, está incluída a notificação completa, que contém os query params, o body e o header da notificação.
+
+Query params: São parâmetros de consulta que acompanham a URL. No exemplo, temos data.id=123456 e type=payment.
+Body: O corpo da notificação contém informações detalhadas sobre o evento, como action, api_version, data, date_created, id, live_mode, type e user_id.
+Header: O cabeçalho contém metadados importantes, incluindo a assinatura secreta da notificação x-signature.
+POST /test?data.id=123456&type=payment HTTP/1.1
+Host: prueba.requestcatcher.com
+Accept: */*
+Accept-Encoding: *
+Connection: keep-alive
+Content-Length: 177
+Content-Type: application/json
+Newrelic: eyJ2IjpbMCwxXSwiZCI6eyJ0eSI6IkFwcCIsImFjIjoiOTg5NTg2IiwiYXAiOiI5NjA2MzYwOTQiLCJ0eCI6IjU3ZjI4YzNjOWE2ODNlZDYiLCJ0ciI6IjY0NjA0OTM3OWI1ZjA3MzMyZDdhZmQxMjEyM2I5YWE4IiwicHIiOjAuNzk3ODc0LCJzYSI6ZmFsc2UsInRpIjoxNzQyNTA1NjM4Njg0LCJ0ayI6IjE3MDk3MDcifX0=
+Traceparent: 00-646049379b5f07332d7afd12123b9aa8-e7f77a41f687aecd-00
+Tracestate: 1709707@nr=0-0-989586-960636094-e7f77a41f687aecd-57f28c3c9a683ed6-0-0.797874-1742505638684
+User-Agent: restclient-node/4.15.3
+X-Request-Id: bb56a2f1-6aae-46ac-982e-9dcd3581d08e
+X-Rest-Pool-Name: /services/webhooks.js
+X-Retry: 0
+X-Signature: ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b
+X-Socket-Timeout: 22000
+{"action":"payment.updated","api_version":"v1","data":{"id":"123456"},"date_created":"2021-11-01T02:02:02Z","id":"123456","live_mode":false,"type":"payment","user_id":724484980}
+A partir da notificação Webhook recebida, você poderá validar a autenticidade de sua origem. O Mercado Pago sempre incluirá a chave secreta nas notificações Webhooks que serão recebidas, o que permitirá validar sua autenticidade. Essa chave será enviada no header x-signature, que será semelhante ao exemplo abaixo.
+
+`ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b`
+Para confirmar a validação, é necessário extrair a chave contida no header e compará-la com a chave fornecida para sua aplicação em Suas integrações. Para isso, siga o passo a passo abaixo. Ao final, disponibilizamos nossos SDKs com exemplos de códigos completos para facilitar o processo.
+
+Para extrair o timestamp (ts) e a chave (v1) do header x-signature, divida o conteúdo do header pelo caractere “,", o que resultará em uma lista de elementos. O valor para o prefixo ts é o timestamp (em milissegundos) da notificação e v1 é a chave encriptada. Seguindo o exemplo apresentado anteriormente, ts=1742505638683 e v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b.
+Utilizando o template abaixo, substitua os parâmetros com os dados recebidos na sua notificação.
+id:[data.id_url];request-id:[x-request-id_header];ts:[ts_header];
+Os parâmetros com o sufixo _url vêm de query params. Exemplo: [data.id_url] será substituído pelo valor correspondente ao ID do evento (data.id). Este query param pode ser encontrado na notificação recebida. No exemplo de notificação mencionado anteriormente, o data.id_url é 123456.
+[x-request-id_header] deverá ser substituído pelo valor recebido no header x-request-id. No exemplo de notificação mencionado anteriormente, o x-request-id é bb56a2f1-6aae-46ac-982e-9dcd3581d08e.
+[ts_header] será o valor ts extraído do header x-signature. No exemplo de notificação mencionado anteriormente, o ts é 1742505638683.
+Após aplicar os dados ao template, o resultado seria o seguinte id:123456;request-id:bb56a2f1-6aae-46ac-982e-9dcd3581d08e;ts:1742505638683;
+Importante
+Se algum dos valores apresentados no modelo anterior não estiver presente na notificação recebida, você deve removê-lo.
+Em Suas integrações, selecione a aplicação integrada, clique em Webhooks > Configurar notificação e revele a chave secreta gerada.
+Signature
+
+Gere a contrachave para a validação. Para fazer isso, calcule um HMAC com a função de hash SHA256 em base hexadecimal, utilizando a chave secreta como chave e o template com os valores como mensagem.
+import hashlib, hmac, binascii
+
+cyphedSignature = binascii.hexlify(hmac_sha256(secret.encode(), signedTemplate.encode()))
+Finalmente, compare a chave gerada com a chave extraída do header, certificando-se de que correspondam exatamente. Além disso, você pode usar o timestamp extraído do header para compará-lo com um timestamp gerado no momento da recepção da notificação, a fim de estabelecer uma tolerância de atraso na recepção da mensagem.
+A seguir, você pode ver exemplos de código completo:
+
+import hashlib
+import hmac
+import urllib.parse
+
+# Obtain the x-signature value from the header
+xSignature = request.headers.get("x-signature")
+xRequestId = request.headers.get("x-request-id")
+
+# Obtain Query params related to the request URL
+queryParams = urllib.parse.parse_qs(request.url.query)
+
+# Extract the "data.id" from the query params
+dataID = queryParams.get("data.id", [""])[0]
+
+# Separating the x-signature into parts
+parts = xSignature.split(",")
+
+# Initializing variables to store ts and hash
+ts = None
+hash = None
+
+# Iterate over the values to obtain ts and v1
+for part in parts:
+    # Split each part into key and value
+    keyValue = part.split("=", 1)
+    if len(keyValue) == 2:
+        key = keyValue[0].strip()
+        value = keyValue[1].strip()
+        if key == "ts":
+            ts = value
+        elif key == "v1":
+            hash = value
+
+# Obtain the secret key for the user/application from Mercadopago developers site
+secret = "your_secret_key_here"
+
+# Generate the manifest string
+manifest = f"id:{dataID};request-id:{xRequestId};ts:{ts};"
+
+# Create an HMAC signature defining the hash type and the key as a byte array
+hmac_obj = hmac.new(secret.encode(), msg=manifest.encode(), digestmod=hashlib.sha256)
+
+# Obtain the hash result as a hexadecimal string
+sha = hmac_obj.hexdigest()
+if sha == hash:
+    # HMAC verification passed
+    print("HMAC verification passed")
+else:
+    # HMAC verification failed
+    print("HMAC verification failed")
+Após configurar as notificações, acesse a seção Ações necessárias após receber uma notificação para confirmar que elas foram devidamente recebidas.
+
+Ações necessárias após receber a notificação
+Quando você recebe uma notificação na sua plataforma, o Mercado Pago espera uma resposta para validar que essa recepção foi correta. Para isso, você deve devolver um HTTP STATUS 200 (OK) ou 201 (CREATED).
+
+O tempo de espera para essa confirmação será de 22 segundos. Se não for enviada essa resposta, o sistema entenderá que a notificação não foi recebida e realizará uma nova tentativa de envio a cada 15 minutos, até que receba a resposta. Após a terceira tentativa, o prazo será prorrogado, mas os envios continuarão acontecendo.
+
+Integrador
+Mercado Pago
+Integrador
+Mercado Pago
+tentativa: 1. Atraso: 0 minutos
+tentativa: 2. Atraso: 15 minutos
+tentativa: 3. Atraso: 30 minutos
+tentativa: 4. Atraso: 6 horas
+tentativa: 5. Atraso: 48 horas
+tentativa: 6. Atraso: 96 horas
+tentativa: 7. Atraso: 96 horas
+tentativa: 8. Atraso: 96 horas
+Após responder a notificação, confirmando seu recebimento, você pode obter todas as informações sobre o evento do tópico payments notificado fazendo um GET ao endpoint v1/payments/{id}.
+
+Com essas informações, você poderá realizar as atualizações necessárias na sua plataforma, como por exemplo, atualizar um pagamento aprovado.
+
+Além disso, para consultar o status do evento após a notificação, você pode utilizar os diferentes métodos dos nossos SDKs para realizar a consulta com o ID que foi enviado na notificação.
+
+sdk = mercadopago.SDK("ENV_ACCESS_TOKEN")
+notification_type = data["type"]
+if notification_type == "payment":
+    payment = sdk.payment().get(payload["data"]["id"])
+elif notification_type == "plan":
+    plan = sdk.preapproval().get(payload["data"]["id"]) 
+elif notification_type == "subscription":
+    subscription = sdk.preapproval().get(payload["data"]["id"])
+elif notification_type == "invoice":
+    invoice = sdk.invoice().get(payload["data"]["id"])
+elif notification_type == "point_integration_wh":
+    # Contiene la informaciòn relacionada a la notificaciòn.
+else:
+    return
+
+Configuração ao criar preferências
+Durante o processo de criação de preferências, é possível configurar a URL de notificação de forma mais específica para cada pagamento utilizando o campo notification_url.
+
+A notification_url deve ser uma URL com protocolo HTTPS. Isso garante que as notificações sejam transmitidas de forma segura e que os dados trocados estejam criptografados, protegendo a integridade e a confidencialidade das informações. Além disso, HTTPS autentica que a comunicação está sendo realizada com o servidor legítimo, evitando possíveis interceptações maliciosas.
+A seguir, explicamos como configurar notificações ao criar um pagamento utilizando nossos SDKs.
+
+No campo notification_url, indique a URL de onde as notificações serão recebidas, como mostrado abaixo.
+# Cria um item na preferência
+preference_data = {
+    "notification_url" : "www.your_url_to_notification.com/",
+    "items": [
+        {
+            "title": "Mi producto",
+            "quantity": 1,
+            "unit_price": 75.76,
+        }
+    ]
+}
+
+preference_response = sdk.preference().create(preference_data)
+preference = preference_response["response"]
+Implemente o receptor de notificações usando o código a seguir como exemplo:
+<?php
+ MercadoPago\SDK::setAccessToken("ENV_ACCESS_TOKEN");
+ switch($_POST["type"]) {
+     case "payment":
+         $payment = MercadoPago\Payment::find_by_id($_POST["data"]["id"]);
+         break;
+     case "plan":
+         $plan = MercadoPago\Plan::find_by_id($_POST["data"]["id"]);
+         break;
+     case "subscription":
+         $plan = MercadoPago\Subscription::find_by_id($_POST["data"]["id"]);
+         break;
+     case "invoice":
+         $plan = MercadoPago\Invoice::find_by_id($_POST["data"]["id"]);
+         break;
+     case "point_integration_wh":
+         // $_POST contiene la informaciòn relacionada a la notificaciòn.
+         break;
+ }
+?>
+Depois de realizar a configuração necessária, a notificação Webhook será enviada no formato JSON. Veja abaixo um exemplo de notificação do tópico payment e as descrições das informações enviadas na tabela abaixo.
+
+Importante
+Os pagamentos de teste, criados com credenciais de teste, não enviarão notificações. A única maneira de testar a recepção de notificações é através da Configuração através de Suas integrações.
+{
+ "id": 12345,
+ "live_mode": true,
+ "type": "payment",
+ "date_created": "2015-03-25T10:04:58.396-04:00",
+ "user_id": 44444,
+ "api_version": "v1",
+ "action": "payment.created",
+ "data": {
+     "id": "999999999"
+ }
+}
+Atributo	Descrição	Exemplo no JSON
+id	ID da notificação	12345
+live_mode	Indica se a URL inserida é válida.	true
+type	Tipo de notificação recebida de acordo com o tópico previamente selecionado (payments, mp-connect, subscription, claim, automatic-payments, etc)	payment
+date_created	Data de criação do recurso notificado	2015-03-25T10:04:58.396-04:00
+user_id	Identificador do vendedor	44444
+api_version	Valor que indica a versão da API que envia a notificação	v1
+action	Evento notificado, que indica se é uma atualização de um recurso ou a criação de um novo	payment.created
+data.id	ID do pagamento, da ordem comercial ou da reclamação.	999999999
+Após configurar as notificações, acesse a seção Ações necessárias após receber uma notificação para confirmar que elas foram devidamente recebidas.
+
+Ações necessárias após receber a notificação
+Quando você recebe uma notificação na sua plataforma, o Mercado Pago espera uma resposta para validar que essa recepção foi correta. Para isso, você deve devolver um HTTP STATUS 200 (OK) ou 201 (CREATED).
+
+O tempo de espera para essa confirmação será de 22 segundos. Se não for enviada essa resposta, o sistema entenderá que a notificação não foi recebida e realizará uma nova tentativa de envio a cada 15 minutos, até que receba a resposta. Após a terceira tentativa, o prazo será prorrogado, mas os envios continuarão acontecendo.
+
+Integrador
+Mercado Pago
+Integrador
+Mercado Pago
+tentativa: 1. Atraso: 0 minutos
+tentativa: 2. Atraso: 15 minutos
+tentativa: 3. Atraso: 30 minutos
+tentativa: 4. Atraso: 6 horas
+tentativa: 5. Atraso: 48 horas
+tentativa: 6. Atraso: 96 horas
+tentativa: 7. Atraso: 96 horas
+tentativa: 8. Atraso: 96 horas
+Após responder a notificação, confirmando seu recebimento, você pode obter todas as informações sobre o evento do tópico payments notificado fazendo um GET ao endpoint v1/payments/{id}.
+
+Com essas informações, você poderá realizar as atualizações necessárias na sua plataforma, como por exemplo, atualizar um pagamento aprovado.
+
+Além disso, para consultar o status do evento após a notificação, você pode utilizar os diferentes métodos dos nossos SDKs para realizar a consulta com o ID que foi enviado na notificação.
+
+sdk = mercadopago.SDK("ENV_ACCESS_TOKEN")
+notification_type = data["type"]
+if notification_type == "payment":
+    payment = sdk.payment().get(payload["data"]["id"])
+elif notification_type == "plan":
+    plan = sdk.preapproval().get(payload["data"]["id"]) 
+elif notification_type == "subscription":
+    subscription = sdk.preapproval().get(payload["data"]["id"])
+elif notification_type == "invoice":
+    invoice = sdk.invoice().get(payload["data"]["id"])
+elif notification_type == "point_integration_wh":
+    # Contiene la informaciòn relacionada a la notificaciòn.
+else:
+    return
+
+Adicionar o SDK ao frontend e inicializar o checkout
+Client-Side
+
+Uma vez configurado o backend, é necessário configurar o frontend para completar a experiência de pagamento do lado do cliente. Para isso, utilize o SDK MercadoPago.js, que permite capturar pagamentos diretamente no frontend de maneira segura.
+
+Nesta seção, você aprenderá como incluir e inicializar corretamente o SDK, e como renderizar o botão de pagamento do Mercado Pago.
+
+Caso prefira, você pode baixar o SDK MercadoPago.js em nossas bibliotecas oficiais.
+
+Incluir o SDK com HTML/js
+
+Instalar o SDK utilizando React
+Instalar o SDK utilizando React
+Para integrar o SDK MercadoPago.js ao frontend do seu projeto React, siga os passos abaixo, certifique-se de que o Node.js e o npm estão instalados no sistema. Caso não estejam, faça o download através do site oficial do Node.js.
+
+No seu terminal, execute o seguinte comando para criar uma nova aplicação React:
+
+npx create-react-app my-mercadopago-app
+Isso criará um novo diretório chamado my-mercadopago-app com uma estrutura básica de aplicação React.
+
+Instalar SDK MercadoPago.js
+Instale a biblioteca SDK MercadoPago.js no diretório my-mercadopago-app. Você pode fazer isso executando o seguinte comando:
+
+npm install @mercadopago/sdk-react
+Criar um componente para o botão de pagamento
+Abra o arquivo src/App.js da sua aplicação React e atualize o conteúdo para integrar o componente wallet do Mercado Pago, que é o responsável por mostrar o botão de pagamento do Mercado Pago.
+
+Para continuar, utilize sua credencial Public Key de teste.
+
+Se estiver desenvolvendo para outra pessoa, você poderá acessar as credenciais das aplicações que não administra. Para mais informações, consulte a seção Compartilhar credenciais.
+Você também precisará utilizar o identificador da preferência de pagamento que foi obtido como resposta em Criar e configurar uma preferência de pagamento.
+
+A seguir, substitua o valor YOUR_PUBLIC_KEY pela sua chave e YOUR_PREFERENCE_ID pelo identificador da preferência de pagamento no arquivo src/App.js. Veja o exemplo abaixo.
+
+import React from 'react';
+import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
+
+// Inicialize o Mercado Pago com seu Public Key
+initMercadoPago('YOUR_PUBLIC_KEY');
+
+const App = () => {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '50px' }}>
+      <h1>Botão de Pagamento</h1>
+      <p>Clique no botão para realizar o pagamento.</p>
+      {/* Renderize o botão de pagamento */}
+      <div style={{ width: '300px' }}>
+        <Wallet initialization={{ preferenceId: 'YOUR_PREFERENCE_ID' }} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
+Renderizar o botão de pagamento
+Ao executar a aplicação, o SDK do Mercado Pago irá renderizar o botão de pagamento, permitindo que o comprador seja redirecionado para o ambiente de compra, como mostrado na imagem abaixo:
+
+Button
+
+
+Uma vez que você tenha finalizado a configuração no frontend, configure as Notificações para que seu servidor receba atualizações em tempo real sobre os eventos ocorridos na sua integração.
