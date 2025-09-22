@@ -68,6 +68,11 @@ class PaymentConfirmationResponse(BaseModel):
     detail: Optional[str] = None
 
 
+class ProcessPixPaymentRequest(BaseModel):
+    preference_id: str
+    idempotency_key: Optional[str] = None
+
+
 class RegistrationResponse(BaseModel):
     message: str
     requires_verification: bool = True
@@ -119,13 +124,15 @@ async def login(
             expires_delta=access_token_expires
         )
         
+        valid_credits = await CalculationService._get_valid_credits_balance(db, user.id)
+        user.credits = valid_credits
         user_info = UserResponse(
             id=user.id,
             email=user.email,
             first_name=user.first_name,
             last_name=user.last_name,
             referral_code=user.referral_code,
-            credits=user.credits,
+            credits=valid_credits,
             is_verified=user.is_verified,
             is_active=user.is_active,
             is_admin=user.is_admin,
@@ -667,34 +674,33 @@ async def simulate_referral_payment(
     from datetime import datetime, timedelta
     
     try:
-        # Simular "pagamento" dando 3 créditos ao usuário
-        old_credits = current_user.credits
-        current_user.credits += 3
-        
-        # Registrar transação de "compra"
-        expires_at = datetime.utcnow() + timedelta(days=40)
+        balance_before = await CalculationService._get_valid_credits_balance(db, current_user.id)
         purchase_transaction = CreditTransaction(
             user_id=current_user.id,
             transaction_type="purchase",
             amount=3,
-            balance_before=old_credits,
-            balance_after=current_user.credits,
+            balance_before=balance_before,
+            balance_after=balance_before + 3,
             description="Simulated credit purchase",
             reference_id=f"sim_purchase_{current_user.id}_{int(datetime.utcnow().timestamp())}",
-            expires_at=expires_at
+            expires_at=datetime.utcnow() + timedelta(days=40)
         )
         db.add(purchase_transaction)
         
+        await CreditService._refresh_user_legacy_balance(db, current_user)
+        
         # Processar bônus de referência
-        await CalculationService._process_referral_bonus(db, current_user)
+        await CreditService._process_referral_bonus(db, current_user)
         
         await db.commit()
+        
+        new_balance = await CalculationService._get_valid_credits_balance(db, current_user.id)
         
         return {
             "message": "Referral payment simulated successfully",
             "user_id": current_user.id,
             "credits_added": 3,
-            "new_balance": current_user.credits
+            "new_balance": new_balance
         }
         
     except Exception as e:
@@ -852,19 +858,37 @@ async def create_payment_order(current_user: User = Depends(get_current_active_u
         item_details = {
             "id": "CREDITS-PACK-3",
             "title": "Pacote Padrão de 3 Créditos",
-            "price":5.00,
-            "credits": 3
+            "price": 5.00,
+            "credits": 3,
         }
-        
+
         preference = payment_service.create_payment_preference(current_user, item_details)
-        # Retorna o ID da preferência e o ponto de inicialização do checkout
+        amount = float(item_details.get("price", 5.0))
+        credits = item_details.get("credits", 3)
+        # Retorna dados utilizados pelo Checkout Transparente
         return {
             "preference_id": preference["id"],
-            "init_point": preference["init_point"]
+            "init_point": preference["init_point"],
+            "amount": amount,
+            "credits": credits,
         }
     except Exception as e:
         logger.error("Falha ao criar ordem de pagamento.", error=str(e), user_id=current_user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Não foi possível iniciar o pagamento.")
+
+
+@router.post("/payments/process", status_code=status.HTTP_201_CREATED)
+async def process_pix_payment(
+    payload: ProcessPixPaymentRequest,
+    current_user: User = Depends(get_current_active_user),
+):
+    payment = payment_service.create_pix_payment(
+        current_user,
+        preference_id=payload.preference_id,
+        idempotency_key=payload.idempotency_key,
+    )
+
+    return payment
 
 
 @router.post("/payments/confirm", response_model=PaymentConfirmationResponse)
