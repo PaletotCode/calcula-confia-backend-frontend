@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { LucideIcon, type IconName } from "@/components/LucideIcon";
 import useAuth from "@/hooks/useAuth";
-import {
-  extractCreditsFromUser,
-  inferPurchaseFromUser,
-} from "@/utils/user-credits";
 import { confirmPayment } from "@/lib/api";
+import clsx from "clsx";
 
 type PaymentStatus = "success" | "pending" | "failure";
 
@@ -18,294 +16,155 @@ type StatusContent = {
   subtitle: string;
   description: string;
   icon: IconName;
-  accent: string;
-  highlight?: string;
-  timeoutMessage?: string;
+  accentColor: string;
 };
 
 const STATUS_CONTENT: Record<PaymentStatus, StatusContent> = {
   success: {
-    title: "Pagamento confirmado!",
-    subtitle: "Estamos liberando seus créditos na plataforma.",
-    description:
-      "Atualizamos automaticamente o seu acesso a cada poucos segundos. Assim que o Mercado Pago finalizar a confirmação, vamos redirecionar você para a plataforma.",
+    title: "Pagamento Aprovado!",
+    subtitle: "Seu acesso foi liberado.",
+    description: "Preparamos tudo para você. Em instantes, você será redirecionado para a plataforma para começar sua análise.",
     icon: "CircleCheckBig",
-    accent: "bg-green-500/15 text-green-300",
-    highlight:
-      "Obrigado por confiar na CalculaConfia. Estamos garantindo que tudo esteja pronto para você aproveitar seus créditos.",
-    timeoutMessage:
-      "Se a confirmação demorar mais que alguns minutos, clique no botão abaixo para acessar a plataforma e verificar manualmente.",
+    accentColor: "text-green-500",
   },
   pending: {
-    title: "Pagamento em processamento",
-    subtitle: "Ainda não recebemos a confirmação do Mercado Pago.",
-    description:
-      "Tudo certo por aqui! Assim que a operadora concluir a análise do pagamento, vamos liberar seus créditos automaticamente.",
+    title: "Pagamento Pendente",
+    subtitle: "Aguardando confirmação.",
+    description: "Assim que o pagamento for aprovado, seu acesso será liberado automaticamente. Você também receberá uma notificação por e-mail.",
     icon: "Clock",
-    accent: "bg-yellow-500/15 text-yellow-200",
-    highlight:
-      "Você não precisa fazer nada agora. Pode deixar esta página aberta que cuidamos de atualizar tudo para você.",
-    timeoutMessage:
-      "Caso já tenham se passado alguns minutos, acesse a plataforma para conferir o status ou tente novamente iniciar o pagamento.",
+    accentColor: "text-yellow-500",
   },
   failure: {
-    title: "Pagamento não foi concluído",
-    subtitle: "Identificamos que o pagamento foi cancelado ou não autorizado.",
-    description:
-      "Você pode tentar novamente iniciando um novo pagamento ou revisar os dados informados. Se o valor já tiver sido debitado, ele deve ser estornado automaticamente pela operadora.",
-    icon: "CircleX",
-    accent: "bg-red-500/15 text-red-200",
-    highlight:
-      "Caso precise de ajuda, entre em contato com a nossa equipe. Estamos prontos para apoiar você na finalização do acesso.",
-    timeoutMessage:
-      "Se acredita que o pagamento foi concluído, acesse a plataforma para verificar seus créditos atualizados.",
+    title: "Falha no Pagamento",
+    subtitle: "Não foi possível processar.",
+    description: "Houve um problema ao processar seu pagamento. Por favor, verifique os dados e tente novamente ou utilize outra forma de pagamento.",
+    icon: "TriangleAlert",
+    accentColor: "text-red-500",
   },
 };
 
-interface PaymentStatusPageProps {
-  status: PaymentStatus;
-}
-
-export function PaymentStatusPage({ status }: PaymentStatusPageProps) {
+function PaymentStatusComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refresh, user, isAuthenticated } = useAuth();
-  const [hasTimedOut, setHasTimedOut] = useState(false);
-  const searchParamsKey = useMemo(
-    () => (searchParams ? searchParams.toString() : ""),
-    [searchParams]
-  );
-  const paymentContext = useMemo(() => {
-    if (!searchParamsKey) {
-      return null;
-    }
-    const params = new URLSearchParams(searchParamsKey);
-    const paymentId =
-      params.get("payment_id") ?? params.get("collection_id") ?? "";
-    if (!paymentId) {
-      return null;
-    }
-    return {
-      paymentId,
-      status: params.get("status") ?? params.get("collection_status"),
-      preferenceId: params.get("preference_id"),
-    };
-  }, [searchParamsKey]);
+  const { refresh, isAuthenticated } = useAuth();
 
-  const content = useMemo(() => STATUS_CONTENT[status], [status]);
-  const credits = useMemo(() => extractCreditsFromUser(user), [user]);
-  const hasSuccessfulPayment = useMemo(() => {
-    if (!user) {
-      return false;
-    }
+  const [isConfirming, setIsConfirming] = useState(true);
+  const [confirmedStatus, setConfirmedStatus] = useState<PaymentStatus | null>(null);
 
-    if (credits > 0) {
-      return true;
-    }
-
-    return inferPurchaseFromUser(user);
-  }, [credits, user]);
-  const canAccessPlatform = isAuthenticated && hasSuccessfulPayment;
+  const paymentId = useMemo(() => searchParams.get("payment_id"), [searchParams]);
+  const status = useMemo(() => {
+    const param = searchParams.get("status");
+    if (param === "approved" || param === "success") return "success";
+    if (param === "in_process" || param === "pending") return "pending";
+    return "failure";
+  }, [searchParams]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    let intervalId: number | null = null;
-    let timeoutId: number | null = null;
-    let disposed = false;
-
-    const runRefresh = async () => {
-      try {
-        await refresh();
-      } catch (error) {
-        console.error("Falha ao atualizar a sessão", error);
-      }
-    };
-
-    void runRefresh();
-
-    const intervalDelay = status === "success" ? 2000 : 4000;
-
-    intervalId = window.setInterval(() => {
-      void refresh();
-    }, intervalDelay);
-
-    timeoutId = window.setTimeout(() => {
-      if (!disposed) {
-        setHasTimedOut(true);
-      }
-      if (intervalId) {
-        window.clearInterval(intervalId);
-        intervalId = null;
-      }
-    }, 2 * 60 * 1000);
-
-    return () => {
-      disposed = true;
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [refresh, status]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    if (status === "success" && hasSuccessfulPayment) {
-      router.replace("/platform");
-    }
-  }, [hasSuccessfulPayment, isAuthenticated, router, status]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (status !== "success") {
-      return;
-    }
-    if (!isAuthenticated) {
-      return;
-    }
-    if (!paymentContext?.paymentId) {
-      return;
-    }
-    if (hasSuccessfulPayment) {
-      return;
-    }
-
-    let disposed = false;
-
-    const runConfirmation = async () => {
-      try {
-        const response = await confirmPayment({
-          payment_id: paymentContext.paymentId,
-          status: paymentContext.status,
-          preference_id: paymentContext.preferenceId,
+    if (paymentId && isAuthenticated) {
+      confirmPayment({ payment_id: paymentId })
+        .then(() => {
+          setConfirmedStatus("success");
+          void refresh(); // Força a atualização dos créditos do usuário
+        })
+        .catch(() => {
+          // Se a confirmação da API falhar, confia no status da URL
+          setConfirmedStatus(status);
+        })
+        .finally(() => {
+          setIsConfirming(false);
         });
-        if (disposed) {
-          return;
-        }
-        if (response.credits_added || response.already_processed) {
-          await refresh();
-        }
-      } catch (error) {
-        if (!disposed) {
-          console.error("Falha ao confirmar pagamento com o Mercado Pago", error);
-        }
-      }
-    };
+    } else {
+      setIsConfirming(false);
+      setConfirmedStatus(status);
+    }
+  }, [paymentId, status, refresh, isAuthenticated]);
 
-    void runConfirmation();
+  useEffect(() => {
+    if (confirmedStatus === 'success') {
+      const timer = setTimeout(() => {
+        router.replace("/platform");
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [confirmedStatus, router]);
+  
+  const content = useMemo(() => {
+      const currentStatus = confirmedStatus ?? "pending";
+      return STATUS_CONTENT[currentStatus];
+  },[confirmedStatus]);
 
-    const intervalId = window.setInterval(() => {
-      void runConfirmation();
-    }, 7000);
 
-    return () => {
-      disposed = true;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    status,
-    isAuthenticated,
-    paymentContext?.paymentId,
-    paymentContext?.preferenceId,
-    paymentContext?.status,
-    hasSuccessfulPayment,
-    refresh,
-  ]);
-
-  const showLoginReminder = !isAuthenticated && status !== "failure";
-  const showAwaitPaymentMessage =
-    isAuthenticated && !hasSuccessfulPayment && status !== "failure";
+  if (isConfirming) {
+    return (
+        <div className="w-full max-w-lg text-center">
+            <h1 className="text-2xl font-bold text-slate-700">Confirmando seu pagamento...</h1>
+            <p className="text-slate-500">Isso pode levar alguns segundos.</p>
+        </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-4 py-12">
-        <div className="glass-effect rounded-3xl border border-white/10 bg-white/10 p-8 shadow-2xl backdrop-blur">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span
-                className={`flex h-14 w-14 items-center justify-center rounded-full text-2xl font-bold ${content.accent}`}
-              >
-                <LucideIcon name={content.icon} className="h-7 w-7" />
-              </span>
-              <div>
-                <p className="text-sm uppercase tracking-wide text-white/60">Status do pagamento</p>
-                <h1 className="text-2xl font-semibold sm:text-3xl">{content.title}</h1>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-4 text-white/80">
-            <p className="text-base font-medium text-white/90">{content.subtitle}</p>
-            <p className="leading-relaxed">{content.description}</p>
-            {content.highlight ? (
-              <p className="rounded-2xl border border-white/10 bg-white/10 p-4 text-sm text-white/90">
-                {content.highlight}
-              </p>
-            ) : null}
-            {showAwaitPaymentMessage ? (
-              <p className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
-                Ainda não identificamos um pagamento aprovado nesta conta. Assim
-                que o Mercado Pago confirmar, vamos liberar o acesso
-                automaticamente — mantenha esta página aberta.
-              </p>
-            ) : null}
-            {hasTimedOut && content.timeoutMessage ? (
-              <p className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-100">
-                {content.timeoutMessage}
-              </p>
-            ) : null}
-            {showLoginReminder ? (
-              <p className="rounded-2xl border border-white/20 bg-white/5 p-4 text-sm text-white/80">
-                Identificamos que você ainda não está autenticado. Use o botão abaixo para acessar a plataforma com o mesmo e-mail
-                utilizado na compra e verificar os seus créditos.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            {canAccessPlatform ? (
-              <Link
+    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+      <LucideIcon name={content.icon} className={clsx("mx-auto mb-6 h-16 w-16", content.accentColor)} />
+      <h1 className="mb-2 text-3xl font-bold text-slate-800">{content.title}</h1>
+      <p className="mb-6 text-slate-600">{content.subtitle}</p>
+      <p className="mb-8 text-sm text-slate-500">{content.description}</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
+        {confirmedStatus === 'success' ? (
+             <Link
                 href="/platform"
-                className="cta-button inline-flex w-full items-center justify-center rounded-xl px-5 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
+                className="cta-button inline-block rounded-lg px-8 py-3 font-bold text-white shadow-md"
               >
-                Acessar a plataforma
+                Ir para a Plataforma
               </Link>
-            ) : (
-              <button
-                type="button"
-                disabled
-                aria-disabled="true"
-                className="cta-button inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl px-5 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white/80 opacity-60 shadow-lg sm:w-auto"
-              >
-                Aguardando confirmação do pagamento
-              </button>
-            )}
+        ) : (
             <Link
-              href="/"
-              className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-5 py-3 text-center text-sm font-semibold text-white/80 transition hover:border-white/40 hover:text-white sm:w-auto"
-            >
-              Voltar para a página inicial
-            </Link>
-          </div>
-          {!canAccessPlatform ? (
-            <p className="mt-4 text-center text-xs uppercase tracking-wide text-white/60">
-              O acesso só é liberado após um pagamento aprovado vinculado a esta conta.
-            </p>
-          ) : null}
-        </div>
+                href="/#preco"
+                className="cta-button inline-block rounded-lg px-8 py-3 font-bold text-white shadow-md"
+              >
+                Tentar Novamente
+              </Link>
+        )}
+        <Link
+          href="/"
+          className="inline-block rounded-lg bg-slate-100 px-8 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+        >
+          Voltar ao Início
+        </Link>
       </div>
     </div>
   );
 }
 
-export default PaymentStatusPage;
+
+export default function PaymentPage() {
+    return (
+        <div className="flex min-h-screen flex-col bg-[var(--background-light)] text-slate-900">
+          <header className="glass-effect fixed inset-x-0 top-0 z-50">
+            <div className="container mx-auto flex items-center justify-between px-4 py-3 md:px-6">
+              <Link href="/" className="flex items-center space-x-2">
+                <Image src="https://i.imgur.com/64Tovft.png" alt="Logotipo CalculaConfia" width={120} height={32} className="h-8 w-auto" />
+                <span className="hidden text-2xl font-bold text-slate-800 sm:block">
+                  Calcula<span className="text-[var(--primary-accent)]">Confia</span>
+                </span>
+              </Link>
+            </div>
+          </header>
+
+          <main className="flex flex-grow items-center justify-center px-4 pt-16">
+            <Suspense fallback={<div className="text-slate-500">Carregando status do pagamento...</div>}>
+                <PaymentStatusComponent />
+            </Suspense>
+          </main>
+
+          <footer className="bg-slate-900 py-12 text-white">
+            <div className="container mx-auto px-6 text-center text-xs text-slate-400 sm:text-sm">
+                <p className="mx-auto max-w-3xl">
+                  <strong>Aviso Legal:</strong> Nosso cálculo estimativo é válido em todo o território nacional e restrito a unidades consumidoras residenciais. A CalculaConfia é uma ferramenta de software para estimativa e não constitui aconselhamento jurídico.
+                </p>
+                <p className="mt-6 text-slate-500">© 2025 Torres Project. Todos os direitos reservados.</p>
+            </div>
+          </footer>
+        </div>
+      );
+}

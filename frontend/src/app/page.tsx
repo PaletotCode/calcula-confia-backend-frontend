@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import clsx from "clsx";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -10,6 +11,7 @@ import "swiper/css/pagination";
 import "swiper/css/effect-fade";
 import { useMutation } from "@tanstack/react-query";
 import AuthModal from "@/components/AuthModal";
+import MercadoPagoBrick from "@/components/MercadoPagoBrick";
 import { LucideIcon, type IconName } from "@/components/LucideIcon";
 import useAuth from "@/hooks/useAuth";
 import { useIntersectionObserver } from "@/hooks/useIntersectionObserver";
@@ -45,6 +47,8 @@ type PaymentStatus = {
   message: string;
   type: "Info" | "success" | "error";
 };
+
+const DEFAULT_CREDIT_PRICE = 5;
 
 const heroSlides = [
   { src: "https://i.imgur.com/QpHVTbh.mp4", autoPlay: true },
@@ -264,6 +268,8 @@ export default function LandingPage() {
   const [authView, setAuthView] = useState<AuthView>("login");
   const [isPaymentCardOpen, setIsPaymentCardOpen] = useState(false);
   const [isPaymentStatusOpen, setIsPaymentStatusOpen] = useState(false);
+  const [preferenceId, setPreferenceId] = useState<string | null>(null);
+  const [orderAmount, setOrderAmount] = useState<number>(DEFAULT_CREDIT_PRICE);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({
     title: "Status do pagamento",
     message: "Estamos analisando as informações do seu pagamento.",
@@ -287,6 +293,15 @@ export default function LandingPage() {
 
   const balancePollingIntervalRef = useRef<number | null>(null);
   const balancePollingTimeoutRef = useRef<number | null>(null);
+
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
+    []
+  );
+  const formattedOrderAmount = useMemo(
+    () => currencyFormatter.format(orderAmount),
+    [currencyFormatter, orderAmount]
+  );
 
   const stopBalancePolling = useCallback(() => {
     if (balancePollingIntervalRef.current) {
@@ -326,6 +341,7 @@ export default function LandingPage() {
     stopBalancePolling();
     setIsPaymentCardOpen(false);
     setIsPaymentStatusOpen(false);
+    setPreferenceId(null);
     if (
       typeof window !== "undefined" &&
       !window.location.pathname.startsWith("/platform")
@@ -352,27 +368,36 @@ export default function LandingPage() {
       if (historyState.status !== "success" || !historyState.hasPurchase) {
         setHistoryState({ status: "success", hasPurchase: true });
       }
+      stopBalancePolling();
+      setIsPaymentCardOpen(false);
       redirectToPlatform();
       return () => {
         isMounted = false;
       };
     }
+
+    const isAwaitingPixConfirmation = isPollingCredits;
+    const shouldAutoRedirect = !isAwaitingPixConfirmation && (inferredPurchase || credits > 0);
 
     if (inferredPurchase) {
       if (historyState.status !== "success" || !historyState.hasPurchase) {
         setHistoryState({ status: "success", hasPurchase: true });
       }
-      redirectToPlatform();
-      return () => {
-        isMounted = false;
-      };
+      if (shouldAutoRedirect) {
+        redirectToPlatform();
+        return () => {
+          isMounted = false;
+        };
+      }
     }
 
     if (historyState.status === "success" && historyState.hasPurchase) {
-      redirectToPlatform();
-      return () => {
-        isMounted = false;
-      };
+      if (shouldAutoRedirect) {
+        redirectToPlatform();
+        return () => {
+          isMounted = false;
+        };
+      }
     }
 
     if (
@@ -1004,27 +1029,21 @@ export default function LandingPage() {
   const createOrderMutation = useMutation({
     mutationFn: createOrder,
     onSuccess: (data) => {
-      if (window.MercadoPago && data.preference_id) {
-        try {
-          const mp = new window.MercadoPago(
-            process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ?? "",
-            { locale: "pt-BR" }
-          );
-          mp.checkout({ preference: { id: data.preference_id } });
-          setPaymentStatus({
-            title: "Pronto para pagar",
-            message:
-              "Abrimos o checkout em uma nova janela. Assim que o pagamento for aprovado, vamos atualizar seus créditos e redirecionar você automaticamente para a plataforma.",
-            type: "Info",
-          });
-          setIsPaymentStatusOpen(true);
-          return;
-        } catch (error) {
-          console.error(error);
+      if (data.preference_id) {
+        setPreferenceId(data.preference_id);
+        if (typeof data.amount === "number") {
+          setOrderAmount(data.amount);
+        } else {
+          setOrderAmount(DEFAULT_CREDIT_PRICE);
         }
-      }
-      if (data.init_point) {
-        window.location.href = data.init_point;
+      } else {
+        setPaymentStatus({
+          title: "Erro ao iniciar pagamento",
+          message:
+            "Não foi possível obter as informações de pagamento. Tente novamente.",
+          type: "error",
+        });
+        setIsPaymentStatusOpen(true);
       }
     },
     onError: (error) => {
@@ -1066,10 +1085,16 @@ export default function LandingPage() {
       handleOpenAuth("register");
       return;
     }
+    setPreferenceId(null);
+    setOrderAmount(DEFAULT_CREDIT_PRICE);
+    createOrderMutation.reset();
     setIsPaymentCardOpen(true);
   };
 
   const handleBuyCredits = () => {
+    setPreferenceId(null);
+    setOrderAmount(DEFAULT_CREDIT_PRICE);
+    createOrderMutation.reset();
     createOrderMutation.mutate();
   };
 
@@ -1091,7 +1116,17 @@ export default function LandingPage() {
 
   const closePaymentCard = () => {
     setIsPaymentCardOpen(false);
+    setPreferenceId(null);
+    setOrderAmount(DEFAULT_CREDIT_PRICE);
+    createOrderMutation.reset();
   };
+
+  const handlePaymentSuccess = useCallback(async () => {
+    setPreferenceId(null);
+    setIsPaymentCardOpen(false);
+    await refresh();
+    redirectToPlatform();
+  }, [refresh, redirectToPlatform]);
 
   const toggleSessionPanel = () => {
     setIsSessionPanelOpen((prev) => !prev);
@@ -1117,7 +1152,7 @@ export default function LandingPage() {
       <header className="glass-effect fixed inset-x-0 top-0 z-50">
         <div className="container mx-auto flex items-center justify-between px-4 py-3 md:px-6">
           <div className="flex items-center space-x-2">
-            <img src="https://i.imgur.com/64Tovft.png" alt="Logotipo CalculaConfia" className="h-8 w-auto" />
+            <Image src="https://i.imgur.com/64Tovft.png" alt="Logotipo CalculaConfia" width={120} height={32} className="h-8 w-auto" />
             <span className="hidden text-2xl font-bold text-slate-800 sm:block">
               Calcula<span className="text-[var(--primary-accent)]">Confia</span>
             </span>
@@ -1243,10 +1278,13 @@ export default function LandingPage() {
         <section className="bg-slate-800 py-16 text-white md:py-24">
           <div className="container mx-auto grid items-center gap-8 px-6 md:grid-cols-2 md:gap-12">
             <div className="order-last h-80 overflow-hidden rounded-lg md:order-first md:h-96">
-              <img
+              <Image
                 src="https://i.imgur.com/r10jtz0.jpeg"
                 alt="Pessoa analisando documentos financeiros com tranquilidade"
+                width={1200}
+                height={800}
                 className="h-full w-full object-cover"
+                priority={false}
               />
             </div>
             <div>
@@ -1284,24 +1322,31 @@ export default function LandingPage() {
             <div className="flex flex-col items-center gap-12 md:grid md:grid-cols-2 md:gap-16">
               <div className="order-1 flex w-full justify-center md:order-2">
                 <div
-                  ref={tiltCardRef}
-                  className="tilt-card animated-gradient-bg w-full max-w-md rounded-2xl border-t-4 border-[var(--primary-accent)] p-6 shadow-2xl md:p-8"
-                >
-                  <div className="flex items-center justify-center space-x-3 pt-8 md:space-x-4">
-                    <p className="text-2xl font-medium text-slate-500 line-through md:text-3xl">R$10</p>
-                    <p className="text-5xl font-black text-green-600 md:text-6xl">
-                      R$5<span className="text-lg font-medium text-slate-600 md:text-xl">,00</span>
-                    </p>
+                ref={tiltCardRef}
+                className="tilt-card relative w-full max-w-md rounded-2xl border-t-4 border-[var(--primary-accent)] shadow-2xl"
+              >
+                {/* Camada 1: O Fundo que se move (agora uma div separada) */}
+                <div className="animated-gradient-bg absolute inset-0 rounded-2xl"></div>
+
+                {/* Camada 2: O Conteúdo estático (agora em uma div separada com o padding) */}
+                <div className="relative flex h-full flex-col p-6 md:p-8">
+                  <div className="flex-grow">
+                    <div className="flex items-center justify-center space-x-3 pt-8 md:space-x-4">
+                      <p className="text-2xl font-medium text-slate-500 line-through md:text-3xl">R$10</p>
+                      <p className="text-5xl font-black text-green-600 md:text-6xl">
+                        R$5<span className="text-lg font-medium text-slate-600 md:text-xl">,00</span>
+                      </p>
+                    </div>
+                    <p className="mt-4 text-center text-slate-600 md:mt-6 md:text-lg">Pagamento único. Sem mensalidades.</p>
+                    <ul className="mt-8 space-y-4 text-left text-sm md:text-base">
+                      {pricingBenefits.map((benefit) => (
+                        <li key={benefit} className="flex items-center">
+                          <LucideIcon name={benefit.includes("Indique") ? "Gift" : "CircleCheckBig"} className="mr-3 h-5 w-5 flex-shrink-0 text-green-500" />
+                          <span>{benefit}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <p className="mt-4 text-center text-slate-600 md:mt-6 md:text-lg">Pagamento único. Sem mensalidades.</p>
-                  <ul className="mt-8 space-y-4 text-left text-sm md:text-base">
-                    {pricingBenefits.map((benefit) => (
-                      <li key={benefit} className="flex items-center">
-                        <LucideIcon name={benefit.includes("Indique") ? "Gift" : "CircleCheckBig"} className="mr-3 h-5 w-5 flex-shrink-0 text-green-500" />
-                        <span>{benefit}</span>
-                      </li>
-                    ))}
-                  </ul>
                   <button
                     type="button"
                     id="unlock-cta"
@@ -1311,6 +1356,7 @@ export default function LandingPage() {
                     Desbloquear Análise por R$5
                   </button>
                 </div>
+              </div>
               </div>
               <div className="order-2 w-full text-left md:order-1">
                 <h2 className="text-3xl font-extrabold md:text-4xl">Acesso Imediato. Potencial Imenso.</h2>
@@ -1480,34 +1526,51 @@ export default function LandingPage() {
       )}
 
       {isPaymentCardOpen && (
-        <div className="fixed inset-0 z-[60] flex min-h-full items-center justify-center bg-black/60 p-4">
-          <div className="payment-card relative w-full max-w-xl rounded-2xl border border-green-200 bg-white p-8 shadow-2xl md:p-10">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-2xl font-extrabold text-slate-800">Comprar Créditos</h3>
-              <button type="button" onClick={closePaymentCard} className="text-slate-500 hover:text-slate-700" title="Fechar">
-                <LucideIcon name="X" className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mb-6 rounded-xl border border-green-100 bg-green-50 p-4 text-green-800">
-              <p className="font-bold">Desbloqueie agora sua análise exclusiva por apenas R$5!</p>
-              <p className="mt-1 text-sm">
-                Ganhe acesso imediato e descubra oportunidades que você não pode perder. <strong>Oferta limitada</strong>, aproveite enquanto está disponível.
-              </p>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={closePaymentCard}
+              className="absolute right-5 top-5 text-slate-400 hover:text-slate-600"
+              title="Fechar"
+            >
+              <LucideIcon name="X" className="h-5 w-5" />
+            </button>
+            <div className="pr-8">
+              <h3 className="text-xl font-semibold text-slate-900">Gerar pagamento PIX</h3>
+              <p className="mt-1 text-sm text-slate-600">Valor único de {formattedOrderAmount}.</p>
             </div>
             {createOrderMutation.isError && (
-              <div className="mb-4 rounded-lg bg-red-100 p-3 text-sm text-red-700">
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {extractErrorMessage(createOrderMutation.error)}
               </div>
             )}
-            <button
-              type="button"
-              className="btn-gradient-animated w-full rounded-xl py-4 text-lg font-bold text-white transition hover:scale-[1.03]"
-              onClick={handleBuyCredits}
-              disabled={createOrderMutation.isPending}
-            >
-              {createOrderMutation.isPending ? "Gerando checkout..." : "Comprar créditos!"}
-            </button>
-            <div className="mt-4 text-center">
+            <div className="mt-6">
+              {preferenceId ? (
+                <MercadoPagoBrick
+                  preferenceId={preferenceId}
+                  onPaymentCreated={() => startBalancePolling()}
+                  onPaymentSuccess={handlePaymentSuccess}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    className="w-full rounded-xl bg-green-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70"
+                    onClick={handleBuyCredits}
+                    disabled={createOrderMutation.isPending}
+                  >
+                    {createOrderMutation.isPending
+                      ? "Gerando PIX..."
+                      : `Gerar PIX de ${formattedOrderAmount}`}
+                  </button>
+                  <p className="text-center text-xs text-slate-500">
+                    Você verá o QR Code oficial do Mercado Pago em seguida.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 text-center">
               <button
                 type="button"
                 className="text-sm font-medium text-green-700 hover:text-green-800"
@@ -1597,3 +1660,6 @@ export default function LandingPage() {
     </div>
   );
 }
+
+
+

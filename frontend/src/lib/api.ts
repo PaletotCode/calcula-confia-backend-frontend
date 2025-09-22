@@ -83,6 +83,8 @@ export interface CalcularResponse {
 export interface CreateOrderResponse {
   preference_id: string;
   init_point: string;
+  amount?: number;
+  credits?: number;
   sandbox_init_point?: string;
   [key: string]: unknown;
 }
@@ -100,6 +102,27 @@ export interface ConfirmPaymentResponse {
   already_processed: boolean;
   credits_balance?: number | null;
   detail?: string | null;
+}
+
+export interface ProcessPixPaymentPayload {
+  preference_id: string;
+  idempotency_key?: string;
+}
+
+export interface PixPaymentResponse {
+  id: string | number;
+  status?: string | null;
+  status_detail?: string | null;
+  point_of_interaction?: {
+    transaction_data?: {
+      qr_code?: string;
+      qr_code_base64?: string;
+      ticket_url?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 export interface CreditsBalanceResponse {
@@ -180,6 +203,14 @@ export const createOrder = async () => {
 export const confirmPayment = async (payload: ConfirmPaymentPayload) => {
   const { data } = await api.post<ConfirmPaymentResponse>(
     "/payments/confirm",
+    payload
+  );
+  return data;
+};
+
+export const processPixPayment = async (payload: ProcessPixPaymentPayload) => {
+  const { data } = await api.post<PixPaymentResponse>(
+    "/payments/process",
     payload
   );
   return data;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import Image from "next/image";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -360,9 +361,11 @@ export function Calculator() {
             <div className="carousel-container">
               <div className="carousel-track">
                 <div className="carousel-slide">
-                  <img
+                  <Image
                     src="https://placehold.co/400x300/e2e8f0/64748b?text=Onde+encontrar+o+ICMS%3F"
                     alt="Onde encontrar o ICMS na fatura"
+                    width={400}
+                    height={300}
                   />
                   <p className="mt-2 text-sm font-semibold sm:text-base">Onde encontrar o ICMS?</p>
                   <p className="text-xs text-slate-600 sm:text-sm">
@@ -370,9 +373,11 @@ export function Calculator() {
                   </p>
                 </div>
                 <div className="carousel-slide">
-                  <img
+                  <Image
                     src="https://placehold.co/400x300/e2e8f0/64748b?text=Preencha+o+valor+exato"
                     alt="Preencha o valor exato"
+                    width={400}
+                    height={300}
                   />
                   <p className="mt-2 text-sm font-semibold sm:text-base">Preencha o valor exato</p>
                   <p className="text-xs text-slate-600 sm:text-sm">
@@ -380,9 +385,11 @@ export function Calculator() {
                   </p>
                 </div>
                 <div className="carousel-slide">
-                  <img
+                  <Image
                     src="https://placehold.co/400x300/e2e8f0/64748b?text=Data+de+Vencimento"
                     alt="Data de vencimento"
+                    width={400}
+                    height={300}
                   />
                   <p className="mt-2 text-sm font-semibold sm:text-base">Use a data de vencimento</p>
                   <p className="text-xs text-slate-600 sm:text-sm">
@@ -1041,7 +1048,6 @@ function CurrencyInput({ value, onValueChange, placeholder }: CurrencyInputProps
       radix: ",",
       padFractionalZeros: true,
     });
-    mask.value = value;
     maskRef.current = mask;
     mask.on("accept", () => {
       onValueChange(mask.value);

@@ -75,8 +75,8 @@ export function inferPurchaseFromUser(user: User | null): boolean {
     return true;
   }
   const record = user as Record<string, unknown>;
-  const referralCode = record.referral_code;
-  if (typeof referralCode === "string" && referralCode.trim() !== "") {
+  const referralCreditsEarned = parseNumericValue(record.referral_credits_earned);
+  if (typeof referralCreditsEarned === "number" && referralCreditsEarned > 0) {
     return true;
   }
   const purchaseDates = [

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import Image from "next/image";
 import { useMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -11,6 +12,7 @@ import {
   type RegisterPayload,
 } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
 import { LucideIcon } from "@/components/LucideIcon";
 
 interface AuthModalProps {
@@ -25,6 +27,7 @@ const REGISTER_STEPS = ["Dados pessoais", "Contato", "Senha"];
 
 export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalProps) {
   const { login, refresh } = useAuth();
+  const router = useRouter();
 
   const [activeView, setActiveView] = useState<AuthView>(defaultView);
   const [registerStep, setRegisterStep] = useState(0);
@@ -108,9 +111,27 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       }, 600);
     },
     onError: (error: unknown) => {
-      setLoginSuccess("");
-      setLoginError(extractErrorMessage(error));
-    },
+    setLoginSuccess("");
+    const errorMessage = extractErrorMessage(error);
+
+    // Verifica especificamente pelo erro de conta não verificada
+    if (errorMessage && errorMessage.toLowerCase().includes("account not verified")) {
+      // Preenche o formulário de verificação com o e-mail da tentativa de login
+      setVerifyForm({ email: loginForm.email.trim(), code: "" });
+
+      // Muda para a tela de verificação
+      setActiveView("verify");
+
+      // Dispara o reenvio de um novo código de verificação
+      sendVerificationCodeMutation.mutate(loginForm.email.trim());
+
+      // Limpa o erro de login, pois o fluxo mudou
+      setLoginError("");
+    } else {
+      // Para qualquer outro erro, exibe a mensagem no formulário de login
+      setLoginError(errorMessage);
+    }
+  },
   });
 
   const registerMutation = useMutation({
@@ -159,21 +180,16 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       }),
     onSuccess: async () => {
       setVerifyError("");
-      setVerifySuccess("Conta verificada! Redirecionando...");
-      try {
-        await refresh();
-        setTimeout(() => {
-          setVerifySuccess("");
-          onClose();
-        }, 500);
-      } catch (error) {
-        console.error("Falha ao atualizar sessão após verificação", error);
-        setVerifySuccess("");
-        setVerifyError(
-          "Conta verificada, mas não conseguimos atualizar sua sessão automaticamente. Faça login com seu e-mail e senha."
-        );
-        setActiveView("login");
-      }
+      setVerifySuccess("Conta verificada com sucesso! Redirecionando...");
+
+      // 1. O backend já autenticou. Apenas sincronizamos o estado do frontend.
+      //    A função refresh() do seu useAuth cuida disso.
+      await refresh();
+
+      // 3. Fecha o modal.
+      setTimeout(() => {
+        onClose();
+      }, 600);
     },
     onError: (error: unknown) => {
       setVerifySuccess("");
@@ -277,11 +293,13 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         </button>
 
         <div className="border-b border-slate-200 p-6 text-center">
-          <img
+          <Image
             src="https://i.imgur.com/64Tovft.png"
             alt="Logotipo CalculaConfia"
+            width={160}
+            height={40}
             className="mx-auto mb-4 h-10 w-auto"
-            loading="lazy"
+            priority={false}
           />
           <div className="inline-flex rounded-lg bg-slate-100 p-1">
             <button
