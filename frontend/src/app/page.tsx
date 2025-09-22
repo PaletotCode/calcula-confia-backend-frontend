@@ -283,6 +283,7 @@ export default function LandingPage() {
   const [isPollingCredits, setIsPollingCredits] = useState(false);
   const [isSessionPanelOpen, setIsSessionPanelOpen] = useState(false);
   const [isPricingDetailsOpen, setIsPricingDetailsOpen] = useState(false);
+  const [isPaymentFlowActive, setIsPaymentFlowActive] = useState(false);
 
   const stepsSectionRef = useRef<HTMLElement | null>(null);
   const testimonialsSectionRef = useRef<HTMLElement | null>(null);
@@ -351,6 +352,9 @@ export default function LandingPage() {
   }, [stopBalancePolling]);
 
   useEffect(() => {
+    if (isPaymentFlowActive) {
+      return; // <<-- SE O PAGAMENTO ESTÁ ATIVO, NÃO FAZ NADA
+    }
     if (!isAuthenticated) {
       setHasPromptedPurchase(false);
       setHistoryState({ status: "idle", hasPurchase: false });
@@ -446,6 +450,7 @@ export default function LandingPage() {
     redirectToPlatform,
     stopBalancePolling,
     user,
+    isPaymentFlowActive
   ]);
 
   useEffect(() => {
@@ -1092,6 +1097,9 @@ export default function LandingPage() {
   };
 
   const handleBuyCredits = () => {
+    // Previne cliques duplos e reinício se o fluxo já começou
+    if (createOrderMutation.isPending || isPaymentFlowActive) return;
+    setIsPaymentFlowActive(true); // <<-- TRAVA O FLUXO AQUI
     setPreferenceId(null);
     setOrderAmount(DEFAULT_CREDIT_PRICE);
     createOrderMutation.reset();
@@ -1119,9 +1127,11 @@ export default function LandingPage() {
     setPreferenceId(null);
     setOrderAmount(DEFAULT_CREDIT_PRICE);
     createOrderMutation.reset();
+    setIsPaymentFlowActive(false); // <<-- DESTRAVA O FLUXO
   };
 
   const handlePaymentSuccess = useCallback(async () => {
+    setIsPaymentFlowActive(false); // <<-- DESTRAVA O FLUXO
     setPreferenceId(null);
     setIsPaymentCardOpen(false);
     await refresh();
