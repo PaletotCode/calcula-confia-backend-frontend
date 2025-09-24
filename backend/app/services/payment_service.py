@@ -13,6 +13,7 @@ from ..core.config import settings
 from ..core.logging_config import get_logger
 from ..models_schemas.models import User
 from .credit_service import CreditService
+from .payment_state_service import PaymentStateService
 from urllib.parse import urlparse
 
 logger = get_logger(__name__)
@@ -144,6 +145,13 @@ async def process_payment_and_award(
     metadata = payment_info.get("metadata") or {}
     credits_to_add = metadata.get("credits_amount")
 
+    await PaymentStateService.sync_with_payment_info(
+        db=db,
+        payment_id=str(payment_id),
+        user_id=user_id,
+        payment_info=payment_info,
+    )
+
     if credits_to_add is None:
         credits_to_add = _resolve_credits_from_order(payment_info)
 
@@ -219,6 +227,13 @@ async def process_payment_and_award(
             payment_id=payment_id,
             user_id=user_id,
         )
+
+        await PaymentStateService.mark_completed(
+            db,
+            payment_id=str(payment_id),
+            detail="already_processed",
+        )
+
         try:
             await FastAPICache.clear(namespace="user_me")
         except Exception as exc:  # pragma: no cover - evita falha caso cache não esteja inicializado
@@ -242,6 +257,12 @@ async def process_payment_and_award(
         user_id=user_id,
         amount=credits_int,
         payment_id=str(payment_id),
+    )
+
+    await PaymentStateService.mark_completed(
+        db,
+        payment_id=str(payment_id),
+        detail="credits_added",
     )
 
     logger.info(

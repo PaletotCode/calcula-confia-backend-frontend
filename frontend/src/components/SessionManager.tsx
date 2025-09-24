@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 
 import MercadoPagoBrick from "@/components/MercadoPagoBrick";
@@ -20,63 +20,33 @@ import useAuth from "@/hooks/useAuth";
 import {
   createOrder,
   extractErrorMessage,
-  getCreditsBalance,
-  type User,
+  getPaymentState,
+  type PaymentStateResponse,
 } from "@/lib/api";
-import {
-  extractCreditsFromBalanceResponse,
-  extractCreditsFromUser,
-  inferPurchaseFromUser,
-} from "@/utils/user-credits";
 
-type SessionStatus =
+const DEFAULT_CREDIT_PRICE = 5;
+
+export type SessionStatus =
   | "LOADING"
   | "LOGGED_OUT"
   | "READY_FOR_PLATFORM"
+  | "AWAITING_PAYMENT"
   | "NEEDS_PAYMENT"
-  | "PAYMENT_IN_PROGRESS";
-
-type PaymentStatus = {
-  title: string;
-  message: string;
-  type: "Info" | "success" | "error";
-};
+  | "PAYMENT_FAILED";
 
 interface SessionManagerContextValue {
   status: SessionStatus;
+  paymentState: PaymentStateResponse | null;
   isPaymentModalOpen: boolean;
-  isPaymentStatusOpen: boolean;
-  paymentStatus: PaymentStatus | null;
   openPaymentModal: () => boolean;
   closePaymentModal: () => void;
-  showPaymentStatus: (status: PaymentStatus) => void;
-  hidePaymentStatus: () => void;
+  refetchPaymentState: () => Promise<PaymentStateResponse | undefined>;
+  isFetchingPaymentState: boolean;
 }
 
 const SessionManagerContext = createContext<
   SessionManagerContextValue | undefined
 >(undefined);
-
-const DEFAULT_CREDIT_PRICE = 5;
-
-declare global {
-  interface Window {
-    __SESSION_MANAGER_DEBUG__?: boolean;
-  }
-}
-
-type DebugPayload = Record<string, unknown>;
-
-const isDebugEnabled = () =>
-  typeof window !== "undefined" && Boolean(window.__SESSION_MANAGER_DEBUG__);
-
-const debugLog = (event: string, payload: DebugPayload = {}) => {
-  if (!isDebugEnabled()) {
-    return;
-  }
-  const timestamp = new Date().toISOString();
-  console.log(`[SessionManager][${timestamp}] ${event}`, payload);
-};
 
 export function useSessionManager() {
   const context = useContext(SessionManagerContext);
@@ -89,266 +59,52 @@ export function useSessionManager() {
 export default function SessionManager({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, isLoading, refresh, setUser } = useAuth();
+  const { isAuthenticated, isLoading, refresh } = useAuth();
 
-  const [status, setStatus] = useState<SessionStatus>("LOADING");
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isPaymentStatusOpen, setIsPaymentStatusOpen] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(
-    null,
-  );
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   const [orderAmount, setOrderAmount] = useState<number>(DEFAULT_CREDIT_PRICE);
-  const [isPollingCredits, setIsPollingCredits] = useState(false);
-  const [hasPromptedPayment, setHasPromptedPayment] = useState(false);
-  const [hasShownSuccess, setHasShownSuccess] = useState(false);
-  const [hasConfirmedCredits, setHasConfirmedCredits] = useState(false);
-  const [latestBalanceCredits, setLatestBalanceCredits] = useState(0);
-  const [isAwaitingConfirmation, setIsAwaitingConfirmation] = useState(false);
-  const isPollingCreditsRef = useRef(false);
-  
+  const readyRefreshTriggeredRef = useRef(false);
+  const autoOpenTriggeredRef = useRef(false);
 
-  const latestBalanceCreditsRef = useRef(0);
-  const isBalanceCheckInFlightRef = useRef(false);
+  const paymentStateQuery = useQuery({
+    queryKey: ["payment-status"],
+    queryFn: getPaymentState,
+    enabled: isAuthenticated,
+    refetchInterval: (query) =>
+      query.state.data?.state === "awaiting_payment" ? 5000 : false,
+  });
 
-  const balancePollingIntervalRef = useRef<number | null>(null);
-  const balancePollingTimeoutRef = useRef<number | null>(null);
-  const redirectDelayTimeoutRef = useRef<number | null>(null);
-  const lastConfirmedUserRef = useRef<User | null>(null);
+  const paymentState = paymentStateQuery.data ?? null;
 
-  const prevStatusRef = useRef<SessionStatus>(status);
-  const prevModalOpenRef = useRef(isPaymentModalOpen);
-  const prevPreferenceRef = useRef<string | null>(preferenceId);
-  const prevAuthRef = useRef<boolean | null>(null);
-
-  const currencyFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
-    [],
-  );
-
-  const stopBalancePolling = useCallback((reason: string = "cleanup") => {
-    const hadInterval = Boolean(balancePollingIntervalRef.current);
-    const hadTimeout = Boolean(balancePollingTimeoutRef.current);
-    const wasPolling = isPollingCreditsRef.current;
-
-    if (hadInterval) {
-      window.clearInterval(balancePollingIntervalRef.current!);
-      balancePollingIntervalRef.current = null;
+  const status = useMemo<SessionStatus>(() => {
+    if (isLoading) {
+      return "LOADING";
     }
-    if (hadTimeout) {
-      window.clearTimeout(balancePollingTimeoutRef.current!);
-      balancePollingTimeoutRef.current = null;
+    if (!isAuthenticated) {
+      return "LOGGED_OUT";
+    }
+    if (paymentStateQuery.isLoading) {
+      return "LOADING";
     }
 
-    if (hadInterval || hadTimeout || wasPolling) {
-      debugLog("stopBalancePolling", { reason, hadInterval, hadTimeout });
-    }
-
-    isPollingCreditsRef.current = false;
-  }, []);
-
-  const resetBalanceTracking = useCallback(
-    (reason: string) => {
-      const previous = latestBalanceCreditsRef.current;
-      if (previous !== 0) {
-        debugLog("balance:reset", { reason, previous });
-      }
-
-      latestBalanceCreditsRef.current = 0;
-      setLatestBalanceCredits(0);
-    },
-    [],
-  );
-
-  const showPaymentStatus = useCallback((info: PaymentStatus) => {
-    debugLog("paymentStatus:show", info);
-
-    setPaymentStatus(info);
-
-    setIsPaymentStatusOpen(true);
-  }, []);
-
-  const hidePaymentStatus = useCallback(() => {
-    debugLog("paymentStatus:hide", { wasOpen: isPaymentStatusOpen });
-
-    setIsPaymentStatusOpen(false);
-  }, [isPaymentStatusOpen]);
-
-  const finalizeAccessReadyState = useCallback(() => {
-    stopBalancePolling("credits-detected");
-    resetBalanceTracking("finalizeAccessReadyState");
-    setPreferenceId(null);
-    setOrderAmount(DEFAULT_CREDIT_PRICE);
-    if (isPaymentModalOpen) {
-      setIsPaymentModalOpen(false);
-    }
-    if (hasPromptedPayment) {
-      setHasPromptedPayment(false);
-    }
-    if (isPaymentStatusOpen) {
-      hidePaymentStatus();
-    }
-    if (hasShownSuccess) {
-      setHasShownSuccess(false);
-    }
-    if (isAwaitingConfirmation) {
-      setIsAwaitingConfirmation(false);
-    }
-    if (status !== "READY_FOR_PLATFORM") {
-      setStatus("READY_FOR_PLATFORM");
+    switch (paymentState?.state) {
+      case "ready_for_platform":
+        return "READY_FOR_PLATFORM";
+      case "awaiting_payment":
+        return "AWAITING_PAYMENT";
+      case "payment_failed":
+        return "PAYMENT_FAILED";
+      case "needs_payment":
+      default:
+        return "NEEDS_PAYMENT";
     }
   }, [
-    isAwaitingConfirmation,
-    hasPromptedPayment,
-    hasShownSuccess,
-    hidePaymentStatus,
-    isPaymentModalOpen,
-    isPaymentStatusOpen,
-    resetBalanceTracking,
-    status,
-    stopBalancePolling,
+    isAuthenticated,
+    isLoading,
+    paymentState?.state,
+    paymentStateQuery.isLoading,
   ]);
-
-  const checkCreditsBalance = useCallback(
-    async (context: string) => {
-      if (!isAuthenticated) {
-        debugLog("balance:check:skipped", {
-          context,
-          reason: "not_authenticated",
-        });
-        return null;
-      }
-
-      if (isBalanceCheckInFlightRef.current) {
-        debugLog("balance:check:skipped", {
-          context,
-          reason: "in_flight",
-        });
-        return null;
-      }
-
-      isBalanceCheckInFlightRef.current = true;
-
-      try {
-        const response = await getCreditsBalance();
-        const credits = extractCreditsFromBalanceResponse(response);
-        const previous = latestBalanceCreditsRef.current;
-
-        if (previous !== credits) {
-          latestBalanceCreditsRef.current = credits;
-          setLatestBalanceCredits(credits);
-          debugLog("balance:update", { context, previous, next: credits });
-        } else {
-          debugLog("balance:update:noop", { context, value: credits });
-        }
-
-        if (credits > 0 && previous <= 0) {
-          debugLog("balance:detected", { context, credits });
-        }
-
-        if (credits > 0 && extractCreditsFromUser(user) <= 0) {
-          debugLog("balance:triggerRefresh", { context });
-          void refresh();
-        }
-
-        return credits;
-      } catch (error) {
-        const message = extractErrorMessage(error);
-        console.error("Erro ao verificar saldo de créditos", error);
-        debugLog("balance:check:error", { context, message });
-        return null;
-      } finally {
-        isBalanceCheckInFlightRef.current = false;
-      }
-    },
-    [isAuthenticated, refresh, user],
-  );
-
-  const startBalancePolling = useCallback(
-    (options?: { immediate?: boolean }) => {
-      if (isPollingCreditsRef.current) {
-        debugLog("startBalancePolling:skipped", { reason: "already_polling" });
-        return;
-      }
-
-      const immediate = options?.immediate ?? true;
-
-      debugLog("startBalancePolling:start", {
-        intervalMs: 4000,
-        timeoutMs: 120000,
-      });
-      stopBalancePolling("restart");
-      isPollingCreditsRef.current = true;
-      setIsAwaitingConfirmation(true);
-      void refresh();
-      if (immediate) {
-        void checkCreditsBalance("polling:start");
-      }
-
-      balancePollingIntervalRef.current = window.setInterval(() => {
-        debugLog("startBalancePolling:tick", {});
-        void refresh();
-        void checkCreditsBalance("polling:tick");
-      }, 4000);
-
-      balancePollingTimeoutRef.current = window.setTimeout(
-        () => {
-          debugLog("startBalancePolling:timeout", {});
-          stopBalancePolling("timeout");
-          showPaymentStatus({
-            title: "Pagamento em processamento",
-            message:
-              "Ainda não recebemos a confirmação do pagamento. Assim que o Mercado Pago aprovar, vamos atualizar seus créditos automaticamente.",
-            type: "Info",
-          });
-        },
-        2 * 60 * 1000,
-      );
-    },
-    [checkCreditsBalance, refresh, showPaymentStatus, stopBalancePolling],
-  );
-
-  const clearConfirmationState = useCallback(
-    (reason: string) => {
-      const hadTimer = Boolean(redirectDelayTimeoutRef.current);
-      if (hadTimer) {
-        window.clearTimeout(redirectDelayTimeoutRef.current!);
-        redirectDelayTimeoutRef.current = null;
-      }
-      const hadSnapshot = Boolean(lastConfirmedUserRef.current);
-      if (hasConfirmedCredits || hadTimer || hadSnapshot) {
-        debugLog("confirmation:clear", {
-          reason,
-          hadTimer,
-          hadSnapshot,
-          wasConfirmed: hasConfirmedCredits,
-        });
-      }
-      if (hasConfirmedCredits) {
-        setHasConfirmedCredits(false);
-      }
-      if (isAwaitingConfirmation) {
-        setIsAwaitingConfirmation(false);
-      }
-      resetBalanceTracking(reason);
-      lastConfirmedUserRef.current = null;
-    },
-    [hasConfirmedCredits, isAwaitingConfirmation, resetBalanceTracking],
-  );
-
-  const scheduleRedirectAfterConfirmation = useCallback(() => {
-    if (redirectDelayTimeoutRef.current) {
-      return;
-    }
-    // Hold the success modal visible for a short time before redirecting.
-    debugLog("confirmation:scheduleRedirect", { delayMs: 2000 });
-    redirectDelayTimeoutRef.current = window.setTimeout(() => {
-      redirectDelayTimeoutRef.current = null;
-      debugLog("confirmation:redirect", {});
-      finalizeAccessReadyState();
-    }, 2000);
-  }, [finalizeAccessReadyState]);
 
   const {
     mutate: triggerCreateOrder,
@@ -359,11 +115,6 @@ export default function SessionManager({ children }: { children: ReactNode }) {
   } = useMutation({
     mutationFn: createOrder,
     onSuccess: (data) => {
-      debugLog("createOrder:success", {
-        hasPreference: Boolean(data.preference_id),
-        amount:
-          typeof data.amount === "number" ? data.amount : DEFAULT_CREDIT_PRICE,
-      });
       if (data.preference_id) {
         setPreferenceId(data.preference_id);
         if (typeof data.amount === "number") {
@@ -372,359 +123,111 @@ export default function SessionManager({ children }: { children: ReactNode }) {
           setOrderAmount(DEFAULT_CREDIT_PRICE);
         }
       } else {
-        debugLog("createOrder:missingPreferenceId", { data });
         setPreferenceId(null);
         setOrderAmount(DEFAULT_CREDIT_PRICE);
-        setStatus("NEEDS_PAYMENT");
-        showPaymentStatus({
-          title: "Erro ao iniciar pagamento",
-          message:
-            "Não foi possível obter as informações de pagamento. Tente novamente.",
-          type: "error",
-        });
       }
     },
-    onError: (error) => {
-      const message = extractErrorMessage(error);
-      debugLog("createOrder:error", { message });
+    onError: () => {
       setPreferenceId(null);
       setOrderAmount(DEFAULT_CREDIT_PRICE);
-      setStatus("NEEDS_PAYMENT");
-      showPaymentStatus({
-        title: "N?o foi poss?vel iniciar",
-        message,
-        type: "error",
-      });
     },
   });
 
-  const resetPaymentFlow = useCallback(
-    (reason: string) => {
-      debugLog("resetPaymentFlow", {
-        reason,
-        status,
-        preferenceId,
-        isPaymentModalOpen,
-        hasPromptedPayment,
-      });
-      setPreferenceId(null);
-      setOrderAmount(DEFAULT_CREDIT_PRICE);
-      setIsPaymentModalOpen(false);
-      setIsPaymentStatusOpen(false);
-      setPaymentStatus(null);
-      setHasPromptedPayment(false);
-      setHasShownSuccess(false);
-      clearConfirmationState(reason);
-      stopBalancePolling("reset");
-      resetCreateOrder();
-    },
-    [
-      hasPromptedPayment,
-      isPaymentModalOpen,
-      preferenceId,
-      resetCreateOrder,
-      status,
-      stopBalancePolling,
-      clearConfirmationState,
-    ],
-  );
+  const refetchPaymentState = useCallback(async () => {
+    const result = await paymentStateQuery.refetch();
+    return result.data;
+  }, [paymentStateQuery]);
 
   const openPaymentModal = useCallback(() => {
-    const allowed = Boolean(isAuthenticated);
-    debugLog("openPaymentModal", { allowed, status, isPaymentModalOpen });
-    if (!allowed) {
+    if (!isAuthenticated) {
       return false;
     }
-
     setIsPaymentModalOpen(true);
-    setHasPromptedPayment(true);
-    if (status === "LOGGED_OUT" || status === "LOADING") {
-      setStatus("NEEDS_PAYMENT");
-    }
     return true;
-  }, [isAuthenticated, isPaymentModalOpen, status]);
+  }, [isAuthenticated]);
 
   const closePaymentModal = useCallback(() => {
-    debugLog("closePaymentModal", { status, preferenceId, isPaymentModalOpen });
     setIsPaymentModalOpen(false);
     setPreferenceId(null);
     setOrderAmount(DEFAULT_CREDIT_PRICE);
-    if (!hasConfirmedCredits) {
-      clearConfirmationState("closePaymentModal");
-    }
-    stopBalancePolling("closeModal");
     resetCreateOrder();
-    if (status === "PAYMENT_IN_PROGRESS") {
-      setStatus("NEEDS_PAYMENT");
-    }
-  }, [
-    clearConfirmationState,
-    hasConfirmedCredits,
-    isPaymentModalOpen,
-    preferenceId,
-    resetCreateOrder,
-    status,
-    stopBalancePolling,
-  ]);
+  }, [resetCreateOrder]);
 
   const handleGeneratePix = useCallback(() => {
-    if (isCreatingOrder) {
-      debugLog("handleGeneratePix:blocked", { reason: "pending_request" });
-      return;
-    }
-
-    debugLog("handleGeneratePix:start", { status, preferenceId });
-    clearConfirmationState("generatePix");
+    resetCreateOrder();
     setPreferenceId(null);
     setOrderAmount(DEFAULT_CREDIT_PRICE);
-    setPaymentStatus(null);
-    resetCreateOrder();
-    setStatus("PAYMENT_IN_PROGRESS");
     triggerCreateOrder();
-  }, [
-    clearConfirmationState,
-    isCreatingOrder,
-    preferenceId,
-    resetCreateOrder,
-    status,
-    triggerCreateOrder,
-  ]);
+  }, [resetCreateOrder, triggerCreateOrder]);
 
-  const handleCheckBalance = useCallback(async () => {
-    debugLog("handleCheckBalance", {});
-    showPaymentStatus({
-      title: "Estamos verificando",
-      message:
-        "Atualizamos suas informações. Assim que novos créditos forem detectados, você será redirecionado automaticamente para a plataforma.",
-      type: "Info",
-    });
-    startBalancePolling({ immediate: false });
-    await refresh();
-    await checkCreditsBalance("manual-check");
-  }, [
-    checkCreditsBalance,
-    refresh,
-    startBalancePolling,
-    showPaymentStatus,
-  ]);
+  const handlePaymentCreated = useCallback(() => {
+    void refetchPaymentState();
+  }, [refetchPaymentState]);
 
-  const handlePaymentSuccess = useCallback(async () => {
-    debugLog("handlePaymentSuccess", { status, preferenceId });
-    startBalancePolling({ immediate: false });
-    showPaymentStatus({
-      title: "Confirmando pagamento",
-      message:
-        "Estamos verificando o crédito do seu PIX. Assim que o saldo for liberado, você será redirecionado automaticamente para a plataforma.",
-      type: "Info",
-    });
-    await refresh();
-    await checkCreditsBalance("payment-success");
-  }, [
-    checkCreditsBalance,
-    preferenceId,
-    refresh,
-    showPaymentStatus,
-    startBalancePolling,
-    status,
-  ]);
-
-  useEffect(() => {
-    if (prevStatusRef.current !== status) {
-      debugLog("status:transition", {
-        from: prevStatusRef.current,
-        to: status,
-      });
-      prevStatusRef.current = status;
+  const handleCheckPayment = useCallback(async () => {
+    await refetchPaymentState();
+    if (isAuthenticated) {
+      await refresh();
     }
-  }, [status]);
+  }, [isAuthenticated, refetchPaymentState, refresh]);
 
   useEffect(() => {
-    if (prevModalOpenRef.current !== isPaymentModalOpen) {
-      debugLog("modal:visibility", { open: isPaymentModalOpen, status });
-      prevModalOpenRef.current = isPaymentModalOpen;
-    }
-  }, [isPaymentModalOpen, status]);
-
-  useEffect(() => {
-    if (prevPreferenceRef.current !== preferenceId) {
-      debugLog("preference:change", {
-        from: prevPreferenceRef.current,
-        to: preferenceId,
-      });
-      prevPreferenceRef.current = preferenceId;
-    }
-  }, [preferenceId]);
-
-  useEffect(() => {
-    if (prevAuthRef.current !== isAuthenticated) {
-      debugLog("auth:change", { isAuthenticated, status });
-      prevAuthRef.current = isAuthenticated;
-    }
-  }, [isAuthenticated, status]);
-
-  useEffect(() => {
-    return () => {
-      stopBalancePolling("unmount");
-      if (redirectDelayTimeoutRef.current) {
-        window.clearTimeout(redirectDelayTimeoutRef.current);
-        redirectDelayTimeoutRef.current = null;
-      }
-    };
-  }, [stopBalancePolling]);
-
-  useEffect(() => {
-    if (isLoading) {
-      if (status !== "LOADING") {
-        debugLog("status:update", { to: "LOADING", reason: "auth-loading" });
-        setStatus("LOADING");
-      }
-      return;
-    }
-
     if (!isAuthenticated) {
-      if (status === "PAYMENT_IN_PROGRESS") {
-        debugLog("auth:missingWhilePayment", {
-          isLoading,
-          preferenceId,
-          isPaymentModalOpen,
-        });
-        return;
-      }
-
-      if (status !== "LOGGED_OUT") {
-        debugLog("status:update", { to: "LOGGED_OUT", reason: "auth-missing" });
-        setStatus("LOGGED_OUT");
-      }
-      resetPaymentFlow("auth-missing");
+      setIsPaymentModalOpen(false);
+      setPreferenceId(null);
+      setOrderAmount(DEFAULT_CREDIT_PRICE);
+      resetCreateOrder();
+      readyRefreshTriggeredRef.current = false;
+      autoOpenTriggeredRef.current = false;
       return;
     }
 
-    const credits = extractCreditsFromUser(user);
-    const hasPurchase = inferPurchaseFromUser(user);
-    const balanceCredits = latestBalanceCredits;
-    const hasBalanceCredits = balanceCredits > 0;
-    const detectedCredits = credits > 0 || hasPurchase || hasBalanceCredits;
-
-    if (detectedCredits) {
-      lastConfirmedUserRef.current = user;
-      if (!hasConfirmedCredits) {
-        debugLog("credits:confirmed", {
-          credits,
-          balanceCredits,
-          hasPurchase,
-          source:
-            credits > 0 || hasPurchase ? "session" : "balance-api",
-        });
-        setHasConfirmedCredits(true);
-        stopBalancePolling("credits-detected");
+    if (status === "READY_FOR_PLATFORM") {
+      if (!readyRefreshTriggeredRef.current) {
+        readyRefreshTriggeredRef.current = true;
+        void refresh();
       }
-
-      if (isAwaitingConfirmation) {
-        if (!hasShownSuccess) {
-          setHasShownSuccess(true);
-        }
-
-        if (!paymentStatus || paymentStatus.type !== "success") {
-          showPaymentStatus({
-            title: "Pagamento aprovado",
-            message: "Atualizando seu acesso para a plataforma...",
-            type: "success",
-          });
-        }
-      } else if (
-        isPaymentStatusOpen &&
-        paymentStatus &&
-        paymentStatus.type === "Info"
-      ) {
-        hidePaymentStatus();
+      if (isPaymentModalOpen) {
+        setIsPaymentModalOpen(false);
+        setPreferenceId(null);
       }
-
-      scheduleRedirectAfterConfirmation();
+      if (pathname && !pathname.startsWith("/platform")) {
+        router.replace("/platform");
+      }
       return;
     }
 
-    if (!hasShownSuccess) {
-        setHasShownSuccess(true);
-      }
+    readyRefreshTriggeredRef.current = false;
 
-      if (!paymentStatus || paymentStatus.type !== "success") {
-        showPaymentStatus({
-          title: "Pagamento aprovado",
-          message: "Atualizando seu acesso para a plataforma...",
-          type: "success",
-        });
-      }
-
-    if (hasConfirmedCredits) {
-      if (lastConfirmedUserRef.current && user !== lastConfirmedUserRef.current) {
-        // Protect against stale polling responses overwriting the confirmed snapshot.
-        debugLog("credits:restoreSnapshot", {});
-        setUser(lastConfirmedUserRef.current);
-      }
-      scheduleRedirectAfterConfirmation();
-      return;
-    }
-
-    if (status === "PAYMENT_IN_PROGRESS") {
-      return;
-    }
-
-    if (status !== "NEEDS_PAYMENT") {
-      setStatus("NEEDS_PAYMENT");
-    }
-
-    if (!hasPromptedPayment) {
+    if (
+      status === "NEEDS_PAYMENT" &&
+      isAuthenticated &&
+      !isPaymentModalOpen &&
+      pathname &&
+      !pathname.startsWith("/platform") &&
+      !autoOpenTriggeredRef.current
+    ) {
+      autoOpenTriggeredRef.current = true;
       setIsPaymentModalOpen(true);
-      setHasPromptedPayment(true);
+    }
+
+    if (status === "AWAITING_PAYMENT") {
+      autoOpenTriggeredRef.current = true;
     }
   }, [
-    hasConfirmedCredits,
-    hasPromptedPayment,
-    hasShownSuccess,
-    hidePaymentStatus,
     isAuthenticated,
-    isAwaitingConfirmation,
-    isLoading,
     isPaymentModalOpen,
-    isPaymentStatusOpen,
-    latestBalanceCredits,
-    paymentStatus,
-    preferenceId,
-    resetPaymentFlow,
-    scheduleRedirectAfterConfirmation,
-    setUser,
-    showPaymentStatus,
+    pathname,
+    refresh,
+    router,
     status,
-    stopBalancePolling,
-    user,
+    resetCreateOrder,
   ]);
 
-  useEffect(() => {
-    if (status !== "READY_FOR_PLATFORM" || !isAuthenticated) {
-      return;
-    }
-    if (pathname && pathname.startsWith("/platform")) {
-      return;
-    }
-    debugLog("navigation:redirect-platform", {
-      from: pathname ?? null,
-      status,
-    });
-    router.replace("/platform");
-  }, [isAuthenticated, pathname, router, status]);
-
-  useEffect(() => {
-    if (!pathname) {
-      return;
-    }
-    if (pathname.startsWith("/platform")) {
-      return;
-    }
-    if (status === "PAYMENT_IN_PROGRESS" && !isPaymentModalOpen) {
-      debugLog("modal:forceOpen", { pathname, status });
-      setIsPaymentModalOpen(true);
-    }
-  }, [isPaymentModalOpen, pathname, status]);
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
+    [],
+  );
 
   const formattedOrderAmount = useMemo(
     () => currencyFormatter.format(orderAmount),
@@ -734,22 +237,20 @@ export default function SessionManager({ children }: { children: ReactNode }) {
   const contextValue = useMemo<SessionManagerContextValue>(
     () => ({
       status,
+      paymentState,
       isPaymentModalOpen,
-      isPaymentStatusOpen,
-      paymentStatus,
       openPaymentModal,
       closePaymentModal,
-      showPaymentStatus,
-      hidePaymentStatus,
+      refetchPaymentState,
+      isFetchingPaymentState: paymentStateQuery.isFetching,
     }),
     [
-      hidePaymentStatus,
-      isPaymentModalOpen,
-      isPaymentStatusOpen,
-      openPaymentModal,
       closePaymentModal,
-      paymentStatus,
-      showPaymentStatus,
+      isPaymentModalOpen,
+      openPaymentModal,
+      paymentState,
+      paymentStateQuery.isFetching,
+      refetchPaymentState,
       status,
     ],
   );
@@ -757,58 +258,6 @@ export default function SessionManager({ children }: { children: ReactNode }) {
   return (
     <SessionManagerContext.Provider value={contextValue}>
       {children}
-
-      {isPaymentStatusOpen && paymentStatus ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 px-3 sm:px-4">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-5 text-center shadow-2xl sm:p-6 md:p-7">
-            <button
-              type="button"
-              onClick={hidePaymentStatus}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
-              title="Fechar aviso"
-            >
-              <LucideIcon name="X" className="h-5 w-5" />
-            </button>
-            <LucideIcon
-              name={
-                paymentStatus.type === "success"
-                  ? "CircleCheckBig"
-                  : paymentStatus.type === "error"
-                    ? "TriangleAlert"
-                    : "Info"
-              }
-              className={clsx(
-                "mx-auto mb-4 h-12 w-12",
-                paymentStatus.type === "success"
-                  ? "text-green-500"
-                  : paymentStatus.type === "error"
-                    ? "text-red-500"
-                    : "text-slate-500",
-              )}
-            />
-            <h2 className="mb-2 text-xl font-bold text-slate-800">
-              {paymentStatus.title}
-            </h2>
-            <p className="text-slate-700">{paymentStatus.message}</p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                className="flex-1 rounded-lg bg-green-600 py-2.5 font-semibold text-white hover:bg-green-700"
-                onClick={hidePaymentStatus}
-              >
-                Continuar
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-lg bg-slate-200 py-2.5 font-semibold text-slate-800 hover:bg-slate-300"
-                onClick={hidePaymentStatus}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {isPaymentModalOpen ? (
         <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 px-3 py-6 sm:px-4 sm:py-8 md:items-center">
@@ -829,17 +278,16 @@ export default function SessionManager({ children }: { children: ReactNode }) {
                 Valor único de {formattedOrderAmount}.
               </p>
             </div>
-            {isCreateOrderError && (
+            {isCreateOrderError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {extractErrorMessage(createOrderError)}
               </div>
-            )}
+            ) : null}
             <div className="mt-5 flex-1">
               {preferenceId ? (
                 <MercadoPagoBrick
                   preferenceId={preferenceId}
-                  onPaymentCreated={() => startBalancePolling()}
-                  onPaymentSuccess={handlePaymentSuccess}
+                  onPaymentCreated={handlePaymentCreated}
                   formattedAmount={formattedOrderAmount}
                 />
               ) : (
@@ -860,13 +308,27 @@ export default function SessionManager({ children }: { children: ReactNode }) {
                 </div>
               )}
             </div>
-            <div className="mt-5 flex-shrink-0 border-t border-slate-100 pt-4 text-center">
+            <div className="mt-5 flex flex-col gap-2 border-t border-slate-100 pt-4 text-xs text-slate-600 sm:text-sm">
+              {status === "AWAITING_PAYMENT" ? (
+                <p className="text-center text-slate-600">
+                  Pagamento criado. Estamos aguardando a confirmação do Mercado Pago.
+                </p>
+              ) : null}
+              {status === "PAYMENT_FAILED" ? (
+                <p className="text-center text-red-600">
+                  O pagamento foi recusado ou expirou. Gere um novo PIX para tentar novamente.
+                </p>
+              ) : null}
               <button
                 type="button"
-                className="text-xs font-medium text-green-700 hover:text-green-800 sm:text-sm"
-                onClick={handleCheckBalance}
+                className={clsx(
+                  "text-center font-semibold text-green-700 transition hover:text-green-800",
+                  paymentStateQuery.isFetching && "opacity-60",
+                )}
+                onClick={handleCheckPayment}
+                disabled={paymentStateQuery.isFetching}
               >
-                Já paguei, verificar saldo
+                Já paguei, verificar status
               </button>
             </div>
           </div>

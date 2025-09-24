@@ -104,6 +104,33 @@ export interface ConfirmPaymentResponse {
   detail?: string | null;
 }
 
+export type PaymentState =
+  | "ready_for_platform"
+  | "awaiting_payment"
+  | "needs_payment"
+  | "payment_failed";
+
+export interface PaymentStateDetails {
+  payment_id?: string | null;
+  preference_id?: string | null;
+  status?: string | null;
+  mercadopago_status?: string | null;
+  detail?: string | null;
+  credits_amount?: number | null;
+  amount?: number | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_sync_at?: string | null;
+}
+
+export interface PaymentStateResponse {
+  state: PaymentState;
+  can_access_platform: boolean;
+  credits_balance: number;
+  payment?: PaymentStateDetails | null;
+}
+
 export interface ProcessPixPaymentPayload {
   preference_id: string;
   idempotency_key?: string;
@@ -205,6 +232,11 @@ export const confirmPayment = async (payload: ConfirmPaymentPayload) => {
     "/payments/confirm",
     payload
   );
+  return data;
+};
+
+export const getPaymentState = async () => {
+  const { data } = await api.get<PaymentStateResponse>("/payments/status");
   return data;
 };
 

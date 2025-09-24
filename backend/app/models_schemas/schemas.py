@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from decimal import Decimal
 from .models import AuditAction, VerificationType
@@ -122,6 +122,32 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ===== Payment Schemas =====
+class PaymentSessionInfo(BaseModel):
+    payment_id: Optional[str] = None
+    preference_id: Optional[str] = None
+    status: Optional[str] = None
+    mercadopago_status: Optional[str] = None
+    detail: Optional[str] = None
+    credits_amount: Optional[int] = None
+    amount: Optional[float] = None
+    expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    last_sync_at: Optional[datetime] = None
+
+
+class PaymentStateResponse(BaseModel):
+    state: Literal[
+        "ready_for_platform",
+        "awaiting_payment",
+        "needs_payment",
+        "payment_failed",
+    ]
+    can_access_platform: bool
+    credits_balance: int
+    payment: Optional[PaymentSessionInfo] = None
 
 
 class CreditTransactionResponse(BaseModel):

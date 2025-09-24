@@ -2,7 +2,8 @@ from datetime import timedelta
 from typing import List, Optional
 
 from ..services import payment_service
-from ..services.credit_service import CreditService # Importa o novo serviço
+from ..services.credit_service import CreditService
+from ..services.payment_state_service import PaymentStateService
 
 from fastapi.responses import JSONResponse
 
@@ -41,6 +42,7 @@ from ..models_schemas.schemas import (
     ResetPasswordRequest,
     VerificationCodeResponse,
     ReferralStatsResponse,
+    PaymentStateResponse,
 )
 from pydantic import BaseModel
 from ..services.main_service import (
@@ -881,11 +883,19 @@ async def create_payment_order(current_user: User = Depends(get_current_active_u
 async def process_pix_payment(
     payload: ProcessPixPaymentRequest,
     current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     payment = payment_service.create_pix_payment(
         current_user,
         preference_id=payload.preference_id,
         idempotency_key=payload.idempotency_key,
+    )
+
+    await PaymentStateService.register_payment_attempt(
+        db,
+        user_id=current_user.id,
+        payment=payment,
+        preference_id=payload.preference_id,
     )
 
     return payment
@@ -928,6 +938,13 @@ async def confirm_payment_status(
         credits_balance=credits_balance,
         detail=result.detail or payload.status,
     )
+
+@router.get("/payments/status", response_model=PaymentStateResponse)
+async def get_payment_status(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PaymentStateService.get_user_state(db, user=current_user)
 
 
 @router.post("/payments/webhook", status_code=status.HTTP_200_OK)

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import useAuth from "@/hooks/useAuth";
 import { useMutation } from "@tanstack/react-query";
 import { createOrder, extractErrorMessage } from "@/lib/api";
@@ -19,7 +19,7 @@ function PlatformContent() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, refresh } = useAuth();
   const searchParams = useSearchParams();
-  const { status } = useSessionManager();
+  const { status, refetchPaymentState, paymentState } = useSessionManager();
   const [isPaymentCardOpen, setIsPaymentCardOpen] = useState(false);
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   const [orderAmount, setOrderAmount] = useState<number>(DEFAULT_PLATFORM_CREDIT_PRICE);
@@ -33,7 +33,8 @@ function PlatformContent() {
     [currencyFormatter, orderAmount]
   );
 
-  const sessionAllowsAccess = status === "READY_FOR_PLATFORM" || status === "PAYMENT_IN_PROGRESS";
+  const sessionAllowsAccess =
+    status === "READY_FOR_PLATFORM" || status === "AWAITING_PAYMENT";
 
   const createOrderMutation = useMutation({
     mutationFn: createOrder,
@@ -77,12 +78,16 @@ function PlatformContent() {
     resetCreateOrder();
   };
 
-  const handlePaymentSuccess = async () => {
+  const handlePaymentCreated = useCallback(() => {
+    void refetchPaymentState();
+  }, [refetchPaymentState]);
+
+  const handleImmediatePayment = useCallback(async () => {
     setPreferenceId(null);
     setIsPaymentCardOpen(false);
+    await refetchPaymentState();
     await refresh();
-    router.replace("/platform", { scroll: false });
-  };
+  }, [refetchPaymentState, refresh]);
 
   useEffect(() => {
     if (searchParams.get("new_user") === "true") {
@@ -95,12 +100,20 @@ function PlatformContent() {
     }
   }, [resetCreateOrder, router, searchParams]);
 
+  useEffect(() => {
+    if (status === "READY_FOR_PLATFORM") {
+      setIsPaymentCardOpen(false);
+      setPreferenceId(null);
+    }
+  }, [status]);
+
   const hasSuccessfulPayment = useMemo(
     () => inferPurchaseFromUser(user),
     [user]
   );
 
-  const waitingForSessionUnlock = sessionAllowsAccess && !hasSuccessfulPayment;
+  const waitingForSessionUnlock =
+    status === "AWAITING_PAYMENT" && !hasSuccessfulPayment;
 
   useEffect(() => {
     if (isLoading) {
@@ -187,8 +200,8 @@ function PlatformContent() {
               {preferenceId ? (
                 <MercadoPagoBrick
                   preferenceId={preferenceId}
-                  onPaymentCreated={() => void refresh()}
-                  onPaymentSuccess={handlePaymentSuccess}
+                  onPaymentCreated={handlePaymentCreated}
+                  onPaymentSuccess={handleImmediatePayment}
                   formattedAmount={formattedOrderAmount}
                 />
               ) : (
@@ -206,6 +219,16 @@ function PlatformContent() {
                   </p>
                 </div>
               )}
+              <div className="mt-4 space-y-2 text-center text-xs text-slate-600 sm:text-sm">
+                {status === "AWAITING_PAYMENT" ? (
+                  <p>Estamos confirmando o seu pagamento com o Mercado Pago.</p>
+                ) : null}
+                {paymentState?.state === "payment_failed" ? (
+                  <p className="text-red-600">
+                    O último pagamento foi recusado ou expirou. Gere um novo PIX para continuar.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>

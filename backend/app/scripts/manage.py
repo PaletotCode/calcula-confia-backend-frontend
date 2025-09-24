@@ -92,6 +92,34 @@ async def create_tables():
     except Exception as e:
         print(f"❌ Erro ao criar tabelas: {e}")
 
+def _run_alembic_upgrade(revision: str) -> None:
+    """Executa o comando alembic upgrade síncrono em uma thread separada."""
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_ini_path = os.path.join(_PROJECT_ROOT, "alembic.ini")
+    if not os.path.exists(alembic_ini_path):
+        raise FileNotFoundError(
+            f"Arquivo alembic.ini não encontrado em '{alembic_ini_path}'"
+        )
+
+    cfg = Config(alembic_ini_path)
+    cfg.set_main_option("script_location", os.path.join(_PROJECT_ROOT, "alembic"))
+    cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    command.upgrade(cfg, revision)
+
+
+async def upgrade_database(revision: str = "head"):
+    """Executa as migrações do Alembic para o revision informado (default: head)."""
+    try:
+        print(f"🚀 Executando migrações Alembic até '{revision}'...")
+        await asyncio.to_thread(_run_alembic_upgrade, revision)
+        print("✅ Migrações aplicadas com sucesso!")
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erro ao executar migrações: {e}")
+
 
 async def seed_sample_data():
     """Popular banco com dados de exemplo"""
@@ -338,6 +366,7 @@ async def main():
         print("  seed-selic <filepath>             - Popular banco com taxas SELIC")
         print("  seed-ipca <filepath>              - Popular banco com IPCA mensal (CSV)")
         print("  create-tables                   - Criar tabelas que faltam (sem dropar)")
+        print("  upgrade-db [revision]           - Executar migrações Alembic (padrão head)")
         print("\nExemplo: python scripts/manage.py create-admin admin@exemplo.com minhasenha123A")
         return
     
@@ -373,6 +402,10 @@ async def main():
         await seed_ipca_data(sys.argv[2])
     elif command == "create-tables":
         await create_tables()
+
+    elif command == "upgrade-db":
+        revision = sys.argv[2] if len(sys.argv) >= 3 else "head"
+        await upgrade_database(revision)
         
     else:
         print(f"❌ Comando desconhecido: {command}")

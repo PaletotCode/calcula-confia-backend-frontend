@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import axios from "axios";
 import clsx from "clsx";
 import { initMercadoPago } from "@mercadopago/sdk-react";
 
 import {
-  confirmPayment,
   extractErrorMessage,
   processPixPayment,
   type PixPaymentResponse,
@@ -16,7 +14,7 @@ import { LucideIcon } from "@/components/LucideIcon";
 interface MercadoPagoBrickProps {
   preferenceId: string;
   onPaymentCreated?: (paymentId: string | number) => void;
-  onPaymentSuccess: () => void;
+  onPaymentSuccess?: () => void;
   formattedAmount?: string;
 }
 
@@ -26,7 +24,6 @@ type PixPaymentStatus = PixPaymentResponse & {
   id: string | number;
 };
 
-const PIX_POLLING_INTERVAL_MS = 5000;
 
 let isMercadoPagoInitialized = false;
 
@@ -37,8 +34,6 @@ export default function MercadoPagoBrick({
   formattedAmount,
 }: MercadoPagoBrickProps) {
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ?? "";
-  const hasReportedSuccess = useRef(false);
-  const pollingTimerRef = useRef<number | null>(null);
   const autoStartRef = useRef<string | null>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const [step, setStep] = useState<CheckoutStep>("idle");
@@ -69,7 +64,6 @@ export default function MercadoPagoBrick({
     setStep("idle");
     setPaymentInfo(null);
     setErrorMessage(null);
-    hasReportedSuccess.current = false;
     autoStartRef.current = null;
     setIsProcessing(false);
     setCopyStatus("idle");
@@ -79,10 +73,6 @@ export default function MercadoPagoBrick({
       copyFeedbackTimerRef.current = null;
     }
 
-    if (pollingTimerRef.current) {
-      window.clearInterval(pollingTimerRef.current);
-      pollingTimerRef.current = null;
-    }
   }, [preferenceId]);
 
   useEffect(() => {
@@ -93,63 +83,6 @@ export default function MercadoPagoBrick({
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!paymentInfo?.id || hasReportedSuccess.current) {
-      return;
-    }
-
-    const poll = async () => {
-      try {
-        const response = await confirmPayment({
-          payment_id: String(paymentInfo.id),
-          preference_id: preferenceId,
-        });
-
-        if (response.credits_added && !hasReportedSuccess.current) {
-          hasReportedSuccess.current = true;
-          if (pollingTimerRef.current) {
-            window.clearInterval(pollingTimerRef.current);
-            pollingTimerRef.current = null;
-          }
-          onPaymentSuccess();
-        }
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          const status = error.response?.status ?? null;
-          const message = extractErrorMessage(error);
-          const isMethodNotAllowed =
-            status === 405 || status === 409 || status === 500 || /method not allowed/i.test(message);
-
-          if (isMethodNotAllowed && !hasReportedSuccess.current) {
-            console.warn(
-              "MercadoPagoBrick: confirm treated as success",
-              { status, message }
-            );
-            hasReportedSuccess.current = true;
-            if (pollingTimerRef.current) {
-              window.clearInterval(pollingTimerRef.current);
-              pollingTimerRef.current = null;
-            }
-            onPaymentSuccess();
-            return;
-          }
-        }
-
-        console.error("Erro ao verificar status do pagamento PIX", error);
-      }
-    };
-
-    void poll();
-    pollingTimerRef.current = window.setInterval(poll, PIX_POLLING_INTERVAL_MS);
-
-    return () => {
-      if (pollingTimerRef.current) {
-        window.clearInterval(pollingTimerRef.current);
-        pollingTimerRef.current = null;
-      }
-    };
-  }, [paymentInfo?.id, preferenceId, onPaymentSuccess]);
 
   const handleGeneratePix = useCallback(async () => {
     if (!preferenceId || isProcessing) {
@@ -170,13 +103,8 @@ export default function MercadoPagoBrick({
       setStep("status");
       onPaymentCreated?.(info.id);
 
-      if (info.status === "approved" && !hasReportedSuccess.current) {
-        hasReportedSuccess.current = true;
-        if (pollingTimerRef.current) {
-          window.clearInterval(pollingTimerRef.current);
-          pollingTimerRef.current = null;
-        }
-        onPaymentSuccess();
+      if (info.status === "approved") {
+        onPaymentSuccess?.();
       }
     } catch (error) {
       console.error("Erro ao gerar PIX", error);

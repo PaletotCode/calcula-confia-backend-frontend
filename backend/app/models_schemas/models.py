@@ -52,6 +52,7 @@ class User(Base):
     history = relationship("QueryHistory", back_populates="user")
     referrer = relationship("User", remote_side=[id], backref="referred_users")
     credit_transactions = relationship("CreditTransaction", back_populates="user")
+    payment_sessions = relationship("PaymentSession", back_populates="user")
 
 
 class VerificationCode(Base):
@@ -125,6 +126,24 @@ class SelicRate(Base):
         sa.UniqueConstraint('year', 'month', name='_year_month_uc'),
     )
 
+class PaymentSession(Base):
+    __tablename__ = "payment_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    payment_id = Column(String(100), nullable=False, unique=True, index=True)
+    preference_id = Column(String(100), nullable=True)
+    status = Column(String(32), nullable=False, default="pending")
+    mercadopago_status = Column(String(32), nullable=True)
+    detail = Column(String(255), nullable=True)
+    credits_amount = Column(Integer, nullable=True)
+    amount = Column(Numeric(10, 2), nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="payment_sessions")
 
 class IPCARate(Base):
     __tablename__ = "ipca_rates"
