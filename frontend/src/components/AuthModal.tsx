@@ -52,6 +52,48 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
   const [verifyForm, setVerifyForm] = useState({ email: "", code: "" });
   const [forgotEmail, setForgotEmail] = useState("");
 
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
+
+  const translateAuthMessage = useCallback((message: string) => {
+    if (!message) {
+      return "Ocorreu um erro inesperado. Tente novamente.";
+    }
+
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes("invalid credentials") || normalized.includes("incorrect password") || normalized.includes("unauthorized")) {
+      return "E-mail ou senha incorretos.";
+    }
+
+    if (normalized.includes("user already exists") || normalized.includes("email already") || normalized.includes("account already")) {
+      return "Este e-mail j? est? cadastrado.";
+    }
+
+    if (normalized.includes("verification code") || normalized.includes("code invalid") || normalized.includes("code expired")) {
+      return "C?digo de verifica??o inv?lido ou expirado.";
+    }
+
+    if (normalized.includes("too many attempts") || normalized.includes("too many requests") || normalized.includes("rate limit")) {
+      return "Muitas tentativas. Aguarde alguns instantes e tente novamente.";
+    }
+
+    if (normalized.includes("password")) {
+      return "Senha inv?lida. Verifique os requisitos informados.";
+    }
+
+    if (normalized.includes("user not found") || normalized.includes("no user")) {
+      return "Usu?rio n?o localizado. Verifique o e-mail informado.";
+    }
+
+    if (normalized.includes("not verified")) {
+      return "Sua conta ainda n?o foi verificada.";
+    }
+
+    return message;
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setActiveView(defaultView);
@@ -129,7 +171,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       setLoginError("");
     } else {
       // Para qualquer outro erro, exibe a mensagem no formulário de login
-      setLoginError(errorMessage);
+      setLoginError(translateAuthMessage(errorMessage));
     }
   },
   });
@@ -157,14 +199,15 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
     },
     onError: (error: unknown) => {
       setRegisterSuccess("");
-      setRegisterError(extractErrorMessage(error));
+      const message = extractErrorMessage(error);
+      setRegisterError(translateAuthMessage(message));
     },
   });
 
   const sendVerificationCodeMutation = useMutation({
     mutationFn: (email: string) => sendVerificationCode(email),
     onError: (error: unknown) => {
-      setVerifyError(extractErrorMessage(error));
+      setVerifyError(translateAuthMessage(extractErrorMessage(error)));
     },
     onSuccess: () => {
       setVerifyError("");
@@ -193,13 +236,37 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
     },
     onError: (error: unknown) => {
       setVerifySuccess("");
-      setVerifyError(extractErrorMessage(error));
+      setVerifyError(translateAuthMessage(extractErrorMessage(error)));
     },
   });
 
-  const isPasswordValid = useMemo(() => registerForm.password.length >= 6, [registerForm.password]);
+  const passwordChecks = useMemo(() => {
+    const value = registerForm.password;
+    return {
+      length: value.length >= 6,
+      uppercase: /[A-Z]/.test(value),
+      lowercase: /[a-z]/.test(value),
+    };
+  }, [registerForm.password]);
+
+  const passwordFeedback = useMemo(
+    () => [
+      { id: "length", label: "Mínimo de 6 caracteres", met: passwordChecks.length },
+      { id: "uppercase", label: "Inclua pelo menos 1 letra maiúscula", met: passwordChecks.uppercase },
+      { id: "lowercase", label: "Inclua pelo menos 1 letra minúscula", met: passwordChecks.lowercase },
+    ],
+    [passwordChecks.length, passwordChecks.lowercase, passwordChecks.uppercase]
+  );
+
+  const isPasswordValid = useMemo(
+    () => passwordFeedback.every((rule) => rule.met),
+    [passwordFeedback]
+  );
+
   const passwordsMatch = useMemo(
-    () => registerForm.password !== "" && registerForm.password === registerForm.confirmPassword,
+    () =>
+      registerForm.password !== "" &&
+      registerForm.password === registerForm.confirmPassword,
     [registerForm.password, registerForm.confirmPassword]
   );
 
@@ -275,7 +342,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3 sm:p-6"
       onClick={handleOverlayClick}
       role="dialog"
       aria-modal="true"
@@ -292,20 +359,20 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
           Fechar janela
         </button>
 
-        <div className="border-b border-slate-200 p-6 text-center">
+        <div className="border-b border-slate-200 p-5 text-center sm:p-6">
           <Image
             src="https://i.imgur.com/64Tovft.png"
             alt="Logotipo CalculaConfia"
             width={160}
             height={40}
-            className="mx-auto mb-4 h-10 w-auto"
+            className="mx-auto mb-3 h-9 w-auto sm:mb-4 sm:h-10"
             priority={false}
           />
           <div className="inline-flex rounded-lg bg-slate-100 p-1">
             <button
               type="button"
               className={clsx(
-                "auth-tab px-6 py-1.5 text-sm font-semibold rounded-md",
+                "auth-tab px-5 py-1.5 text-sm font-semibold rounded-md",
                 activeView === "login" && "active-tab"
               )}
               onClick={() => setActiveView("login")}
@@ -315,7 +382,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
             <button
               type="button"
               className={clsx(
-                "auth-tab px-6 py-1.5 text-sm font-semibold rounded-md",
+                "auth-tab px-5 py-1.5 text-sm font-semibold rounded-md",
                 activeView === "register" && "active-tab"
               )}
               onClick={() => setActiveView("register")}
@@ -326,9 +393,9 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         </div>
 
         {activeView === "login" && (
-          <div className="auth-view p-8">
+          <div className="auth-view p-6 sm:p-8">
             <form onSubmit={handleLoginSubmit} className="flex h-full flex-col">
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div className="form-input-group">
                   <label htmlFor="login-email" className="text-sm font-medium text-slate-700">
                     E-mail
@@ -356,15 +423,23 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
                     <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                     <input
                       id="login-password"
-                      type="password"
+                      type={showLoginPassword ? "text" : "password"}
                       required
-                      className="has-icon"
+                      className="has-icon pr-12"
                       placeholder="********"
                       value={loginForm.password}
                       onChange={(event) =>
                         setLoginForm((prev) => ({ ...prev, password: event.target.value }))
                       }
                     />
+                    <button
+                      type="button"
+                      className={clsx("password-toggle", showLoginPassword && "is-active")}
+                      onClick={() => setShowLoginPassword((prev) => !prev)}
+                      aria-label={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}
+                    >
+                      <LucideIcon name={showLoginPassword ? "EyeOff" : "Eye"} className="h-5 w-5" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -376,12 +451,12 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
               </div>
               <button
                 type="submit"
-                className="auth-button mt-6"
+                className="auth-button mt-5 sm:mt-6"
                 disabled={loginMutation.isPending}
               >
                 {loginMutation.isPending ? "Entrando..." : "Entrar"}
               </button>
-              <div className="mt-4 text-center">
+              <div className="mt-3 text-center sm:mt-4">
                 <button
                   type="button"
                   onClick={() => setActiveView("forgot")}
@@ -407,17 +482,17 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "register" && (
-          <div className="auth-view p-8">
+          <div className="auth-view p-6 sm:p-8">
             <form onSubmit={handleRegisterSubmit} className="flex h-full flex-col">
               <div className="text-center">
-                <h3 className="text-xl font-extrabold text-slate-800">
+                <h3 className="text-lg font-extrabold text-slate-800 sm:text-xl">
                   Antes de começarmos, vamos criar sua conta
                 </h3>
-                <p className="text-sm text-slate-600">
+                <p className="text-xs text-slate-600 sm:text-sm">
                   Leva menos de 1 minuto. Depois você já segue para a sua análise.
                 </p>
               </div>
-              <div className="wizard-progress my-4">
+              <div className="wizard-progress my-3">
                 <div
                   className="wizard-bar"
                   style={{ width: `${((registerStep + 1) / REGISTER_STEPS.length) * 100}%` }}
@@ -426,7 +501,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
 
               {registerStep === 0 && (
                 <div className="wizard-step flex-1 space-y-4">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2">
                     <div className="form-input-group">
                       <label htmlFor="register-firstname" className="text-sm font-medium text-slate-700">
                         Nome
@@ -458,7 +533,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
                       />
                     </div>
                   </div>
-                  <button type="button" className="auth-button mt-6" onClick={handleRegisterNext}>
+                  <button type="button" className="auth-button mt-5 sm:mt-6" onClick={handleRegisterNext}>
                     Próximo
                   </button>
                 </div>
@@ -528,18 +603,37 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
                       <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                       <input
                         id="register-password"
-                        type="password"
+                        type={showRegisterPassword ? "text" : "password"}
                         required
-                        className="has-icon"
+                        className="has-icon pr-12"
                         placeholder="Mínimo 6 dígitos"
                         value={registerForm.password}
                         onChange={(event) =>
                           setRegisterForm((prev) => ({ ...prev, password: event.target.value }))
                         }
                       />
+                      <button
+                        type="button"
+                        className={clsx("password-toggle", showRegisterPassword && "is-active")}
+                        onClick={() => setShowRegisterPassword((prev) => !prev)}
+                        aria-label={showRegisterPassword ? "Ocultar senha" : "Mostrar senha"}
+                      >
+                        <LucideIcon name={showRegisterPassword ? "EyeOff" : "Eye"} className="h-5 w-5" />
+                      </button>
                     </div>
-                    <div className="mt-2 text-xs text-slate-500" aria-live="polite">
-                      {isPasswordValid ? "Ótimo! Senha forte." : "Use pelo menos 6 caracteres."}
+                    <div className="mt-3 space-y-1 text-xs" aria-live="polite">
+                      {passwordFeedback.map((rule) => (
+                        <div
+                          key={rule.id}
+                          className={clsx("pw-rule", rule.met ? "pw-rule--ok" : "pw-rule--pending")}
+                        >
+                          <LucideIcon
+                            name={rule.met ? "CircleCheckBig" : "Circle"} // Mudando "CheckCircle2" para "CheckCircle"
+                            className="h-4 w-4 flex-shrink-0"
+                          />
+                          <span>{rule.label}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div className="form-input-group">
@@ -550,16 +644,25 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
                       <LucideIcon name="Lock" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                       <input
                         id="register-password-confirm"
-                        type="password"
+                        type={showRegisterConfirmPassword ? "text" : "password"}
                         required
                         disabled={!isPasswordValid}
-                        className="has-icon"
+                        className="has-icon pr-12"
                         placeholder="Confirme sua senha"
                         value={registerForm.confirmPassword}
                         onChange={(event) =>
                           setRegisterForm((prev) => ({ ...prev, confirmPassword: event.target.value }))
                         }
                       />
+                      <button
+                        type="button"
+                        className={clsx("password-toggle", showRegisterConfirmPassword && "is-active")}
+                        onClick={() => setShowRegisterConfirmPassword((prev) => !prev)}
+                        aria-label={showRegisterConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
+                        disabled={!isPasswordValid}
+                      >
+                        <LucideIcon name={showRegisterConfirmPassword ? "EyeOff" : "Eye"} className="h-5 w-5" />
+                      </button>
                     </div>
                     <div className="mt-2 text-xs" aria-live="polite">
                       <span className={passwordsMatch ? "pw-good" : "pw-bad"}>
@@ -605,13 +708,13 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "verify" && (
-          <div className="auth-view p-8">
+          <div className="auth-view p-6 sm:p-8">
             <form onSubmit={handleVerifySubmit} className="flex h-full flex-col">
               <h3 className="mb-2 text-center font-bold text-slate-800">Verificar Conta</h3>
-              <p className="mb-6 text-center text-sm text-slate-600">
+              <p className="mb-6 text-center text-xs text-slate-600 sm:text-sm">
                 Enviamos um código de 6 dígitos para seu e-mail.
               </p>
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div className="form-input-group">
                   <label htmlFor="verify-email" className="text-sm font-medium text-slate-700">
                     E-mail
@@ -660,10 +763,10 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
               <div className="success-message" aria-live="polite">
                 {verifySuccess}
               </div>
-              <button type="submit" className="auth-button mt-6" disabled={verifyMutation.isPending}>
+              <button type="submit" className="auth-button mt-5 sm:mt-6" disabled={verifyMutation.isPending}>
                 {verifyMutation.isPending ? "Verificando..." : "Verificar Conta"}
               </button>
-              <div className="mt-4 text-center">
+              <div className="mt-3 text-center sm:mt-4">
                 <button
                   type="button"
                   className="text-sm font-medium text-green-600 hover:text-green-700"
@@ -695,10 +798,10 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "forgot" && (
-          <div className="auth-view p-8">
+          <div className="auth-view p-6 sm:p-8">
             <form onSubmit={handleForgotSubmit} className="flex h-full flex-col">
               <h3 className="mb-2 text-center font-bold text-slate-800">Recuperar Senha</h3>
-              <p className="mb-6 text-center text-sm text-slate-600">
+              <p className="mb-6 text-center text-xs text-slate-600 sm:text-sm">
                 Insira seu e-mail para receber o link de redefinição.
               </p>
               <div className="form-input-group">
@@ -724,7 +827,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
               <div className="success-message" aria-live="polite">
                 {forgotMessage}
               </div>
-              <button type="submit" className="auth-button mt-6">
+              <button type="submit" className="auth-button mt-5 sm:mt-6">
                 Enviar Redefinição
               </button>
             </form>

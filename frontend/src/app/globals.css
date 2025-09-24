@@ -139,6 +139,15 @@
         .pw-check i { width:18px; height:18px; }
         .pw-good { color:#16a34a; }
         .pw-bad { color:#ef4444; }
+        .password-toggle { position:absolute; right:0.75rem; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center; justify-content:center; color:#16a34a; opacity:0.6; transition:color .2s ease, opacity .2s ease; animation:password-toggle-blink 2.4s ease-in-out infinite; }
+        .password-toggle.is-active { opacity:1; }
+        .password-toggle:hover, .password-toggle:focus-visible { opacity:1; color:#15803d; animation-play-state:paused; }
+        .password-toggle[disabled] { opacity:0.25; cursor:not-allowed; animation-play-state:paused; }
+        @keyframes password-toggle-blink { 0%,100% { opacity:0.4; } 55% { opacity:1; } }
+        .pw-rule { display:flex; align-items:center; gap:.4rem; font-size:.75rem; color:#64748b; }
+        .pw-rule svg { width:16px; height:16px; }
+        .pw-rule--ok { color:#16a34a; }
+        .pw-rule--pending { color:#f97316; }
         
         /* --- ESTILOS EFEITO 3D "TILT" --- */
         .tilt-card {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import clsx from "clsx";
@@ -9,24 +9,11 @@ import { Autoplay, EffectFade, Pagination } from "swiper/modules";
 import "swiper/css";
 import "swiper/css/pagination";
 import "swiper/css/effect-fade";
-import { useMutation } from "@tanstack/react-query";
 import AuthModal from "@/components/AuthModal";
-import MercadoPagoBrick from "@/components/MercadoPagoBrick";
+import { useSessionManager } from "@/components/SessionManager";
 import { LucideIcon, type IconName } from "@/components/LucideIcon";
 import useAuth from "@/hooks/useAuth";
 import { useIntersectionObserver } from "@/hooks/useIntersectionObserver";
-import {
-  createOrder,
-  extractErrorMessage,
-  getCreditsHistory,
-  type CreditHistoryResponse,
-  type CreditHistoryItem,
-  type User,
-} from "@/lib/api";
-import {
-  extractCreditsFromUser,
-  inferPurchaseFromUser,
-} from "@/utils/user-credits";
 
 declare global {
   interface Window {
@@ -41,14 +28,6 @@ declare global {
 }
 
 type AuthView = "login" | "register" | "verify";
-
-type PaymentStatus = {
-  title: string;
-  message: string;
-  type: "Info" | "success" | "error";
-};
-
-const DEFAULT_CREDIT_PRICE = 5;
 
 const heroSlides = [
   { src: "https://i.imgur.com/QpHVTbh.mp4", autoPlay: true },
@@ -202,88 +181,15 @@ const faqItems = [
   },
 ];
 
-type PurchaseHistoryState = {
-  status: "idle" | "pending" | "success" | "error";
-  hasPurchase: boolean;
-};
-
-function normalizeHistoryItems(data: unknown): CreditHistoryItem[] {
-  if (!data) {
-    return [];
-  }
-  if (Array.isArray(data)) {
-    return data.filter(
-      (item): item is CreditHistoryItem =>
-        typeof item === "object" && item !== null
-    );
-  }
-  if (typeof data === "object" && data !== null) {
-    const container = data as Record<string, unknown>;
-    const candidateKeys = [
-      "items",
-      "results",
-      "transactions",
-      "history",
-      "data",
-    ];
-    for (const key of candidateKeys) {
-      const value = container[key];
-      if (Array.isArray(value)) {
-        return value.filter(
-          (item): item is CreditHistoryItem =>
-            typeof item === "object" && item !== null
-        );
-      }
-    }
-  }
-  return [];
-}
-
-function hasPurchaseInHistory(data: unknown): boolean {
-  return normalizeHistoryItems(data).some((item) => {
-    const type = String(item.transaction_type ?? item.type ?? "").toLowerCase();
-    if (type.includes("purchase") || type.includes("compra")) {
-      return true;
-    }
-    const record = item as Record<string, unknown>;
-    const detailsCandidate =
-      item.description ??
-      item.reason ??
-      (typeof record.title === "string" ? record.title : undefined) ??
-      (typeof record.note === "string" ? record.note : undefined);
-    if (typeof detailsCandidate === "string") {
-      const normalized = detailsCandidate.toLowerCase();
-      if (normalized.includes("purchase") || normalized.includes("compra")) {
-        return true;
-      }
-    }
-    return false;
-  });
-}
-
 export default function LandingPage() {
-  const { user, isAuthenticated, logout, refresh } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
+
+  const { openPaymentModal } = useSessionManager();
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authView, setAuthView] = useState<AuthView>("login");
-  const [isPaymentCardOpen, setIsPaymentCardOpen] = useState(false);
-  const [isPaymentStatusOpen, setIsPaymentStatusOpen] = useState(false);
-  const [preferenceId, setPreferenceId] = useState<string | null>(null);
-  const [orderAmount, setOrderAmount] = useState<number>(DEFAULT_CREDIT_PRICE);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({
-    title: "Status do pagamento",
-    message: "Estamos analisando as informações do seu pagamento.",
-    type: "Info",
-  });
-  const [hasPromptedPurchase, setHasPromptedPurchase] = useState(false);
-  const [historyState, setHistoryState] = useState<PurchaseHistoryState>({
-    status: "idle",
-    hasPurchase: false,
-  });
-  const [isPollingCredits, setIsPollingCredits] = useState(false);
   const [isSessionPanelOpen, setIsSessionPanelOpen] = useState(false);
   const [isPricingDetailsOpen, setIsPricingDetailsOpen] = useState(false);
-  const [isPaymentFlowActive, setIsPaymentFlowActive] = useState(false);
 
   const stepsSectionRef = useRef<HTMLElement | null>(null);
   const testimonialsSectionRef = useRef<HTMLElement | null>(null);
@@ -291,167 +197,6 @@ export default function LandingPage() {
   const testimonialCardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const tiltCardRef = useRef<HTMLDivElement | null>(null);
   const spotlightSectionRefs = useRef<Array<HTMLElement | null>>([]);
-
-  const balancePollingIntervalRef = useRef<number | null>(null);
-  const balancePollingTimeoutRef = useRef<number | null>(null);
-
-  const currencyFormatter = useMemo(
-    () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
-    []
-  );
-  const formattedOrderAmount = useMemo(
-    () => currencyFormatter.format(orderAmount),
-    [currencyFormatter, orderAmount]
-  );
-
-  const stopBalancePolling = useCallback(() => {
-    if (balancePollingIntervalRef.current) {
-      window.clearInterval(balancePollingIntervalRef.current);
-      balancePollingIntervalRef.current = null;
-    }
-    if (balancePollingTimeoutRef.current) {
-      window.clearTimeout(balancePollingTimeoutRef.current);
-      balancePollingTimeoutRef.current = null;
-    }
-    setIsPollingCredits(false);
-  }, []);
-
-  const startBalancePolling = useCallback(() => {
-    if (isPollingCredits) {
-      return;
-    }
-    stopBalancePolling();
-    setIsPollingCredits(true);
-    void refresh();
-    balancePollingIntervalRef.current = window.setInterval(() => {
-      void refresh();
-    }, 4000);
-    balancePollingTimeoutRef.current = window.setTimeout(() => {
-      stopBalancePolling();
-      setPaymentStatus({
-        title: "Pagamento em processamento",
-        message:
-          "Ainda não recebemos a confirmação do pagamento. Assim que o Mercado Pago aprovar, vamos atualizar seus créditos automaticamente.",
-        type: "Info",
-      });
-      setIsPaymentStatusOpen(true);
-    }, 2 * 60 * 1000);
-  }, [isPollingCredits, refresh, stopBalancePolling]);
-
-  const redirectToPlatform = useCallback(() => {
-    stopBalancePolling();
-    setIsPaymentCardOpen(false);
-    setIsPaymentStatusOpen(false);
-    setPreferenceId(null);
-    if (
-      typeof window !== "undefined" &&
-      !window.location.pathname.startsWith("/platform")
-    ) {
-      window.location.href = "/platform";
-    }
-  }, [stopBalancePolling]);
-
-  useEffect(() => {
-    if (isPaymentFlowActive) {
-      return; // <<-- SE O PAGAMENTO ESTÁ ATIVO, NÃO FAZ NADA
-    }
-    if (!isAuthenticated) {
-      setHasPromptedPurchase(false);
-      setHistoryState({ status: "idle", hasPurchase: false });
-      setIsPaymentCardOpen(false);
-      setIsPaymentStatusOpen(false);
-      stopBalancePolling();
-      return;
-    }
-
-    let isMounted = true;
-
-    const credits = extractCreditsFromUser(user);
-    const inferredPurchase = inferPurchaseFromUser(user);
-    if (credits > 0) {
-      if (historyState.status !== "success" || !historyState.hasPurchase) {
-        setHistoryState({ status: "success", hasPurchase: true });
-      }
-      stopBalancePolling();
-      setIsPaymentCardOpen(false);
-      redirectToPlatform();
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const isAwaitingPixConfirmation = isPollingCredits;
-    const shouldAutoRedirect = !isAwaitingPixConfirmation && (inferredPurchase || credits > 0);
-
-    if (inferredPurchase) {
-      if (historyState.status !== "success" || !historyState.hasPurchase) {
-        setHistoryState({ status: "success", hasPurchase: true });
-      }
-      if (shouldAutoRedirect) {
-        redirectToPlatform();
-        return () => {
-          isMounted = false;
-        };
-      }
-    }
-
-    if (historyState.status === "success" && historyState.hasPurchase) {
-      if (shouldAutoRedirect) {
-        redirectToPlatform();
-        return () => {
-          isMounted = false;
-        };
-      }
-    }
-
-    if (
-      !hasPromptedPurchase &&
-      historyState.status === "idle" &&
-      credits === 0 &&
-      !inferredPurchase
-    ) {
-      setIsPaymentCardOpen(true);
-      setHasPromptedPurchase(true);
-    }
-
-    if (historyState.status === "idle") {
-      setHistoryState({ status: "pending", hasPurchase: false });
-      void getCreditsHistory()
-        .then((data: CreditHistoryResponse) => {
-          if (!isMounted) {
-            return;
-          }
-          const hasPurchase = hasPurchaseInHistory(data);
-          setHistoryState({ status: "success", hasPurchase });
-        })
-        .catch(() => {
-          if (!isMounted) {
-            return;
-          }
-          setHistoryState({ status: "error", hasPurchase: false });
-        });
-    } else if (
-      (historyState.status === "success" && !historyState.hasPurchase) ||
-      historyState.status === "error"
-    ) {
-      if (!hasPromptedPurchase) {
-        setIsPaymentCardOpen(true);
-        setHasPromptedPurchase(true);
-      }
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    hasPromptedPurchase,
-    historyState,
-    isAuthenticated,
-    redirectToPlatform,
-    stopBalancePolling,
-    user,
-    isPaymentFlowActive
-  ]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -461,8 +206,6 @@ export default function LandingPage() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => () => stopBalancePolling(), [stopBalancePolling]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1031,36 +774,6 @@ export default function LandingPage() {
     };
   }, []);
 
-  const createOrderMutation = useMutation({
-    mutationFn: createOrder,
-    onSuccess: (data) => {
-      if (data.preference_id) {
-        setPreferenceId(data.preference_id);
-        if (typeof data.amount === "number") {
-          setOrderAmount(data.amount);
-        } else {
-          setOrderAmount(DEFAULT_CREDIT_PRICE);
-        }
-      } else {
-        setPaymentStatus({
-          title: "Erro ao iniciar pagamento",
-          message:
-            "Não foi possível obter as informações de pagamento. Tente novamente.",
-          type: "error",
-        });
-        setIsPaymentStatusOpen(true);
-      }
-    },
-    onError: (error) => {
-      setPaymentStatus({
-        title: "Não foi possível iniciar",
-        message: extractErrorMessage(error),
-        type: "error",
-      });
-      setIsPaymentStatusOpen(true);
-    },
-  });
-
   const handleOpenAuth = (view: AuthView) => {
     setAuthView(view);
     setIsAuthModalOpen(true);
@@ -1090,60 +803,14 @@ export default function LandingPage() {
       handleOpenAuth("register");
       return;
     }
-    setPreferenceId(null);
-    setOrderAmount(DEFAULT_CREDIT_PRICE);
-    createOrderMutation.reset();
-    setIsPaymentCardOpen(true);
+    openPaymentModal();
   };
-
-  const handleBuyCredits = () => {
-    // Previne cliques duplos e reinício se o fluxo já começou
-    if (createOrderMutation.isPending || isPaymentFlowActive) return;
-    setIsPaymentFlowActive(true); // <<-- TRAVA O FLUXO AQUI
-    setPreferenceId(null);
-    setOrderAmount(DEFAULT_CREDIT_PRICE);
-    createOrderMutation.reset();
-    createOrderMutation.mutate();
-  };
-
-  const handleCheckBalance = async () => {
-    await refresh();
-    startBalancePolling();
-    setPaymentStatus({
-      title: "Estamos verificando",
-      message:
-        "Atualizamos suas informações. Assim que novos créditos forem detectados, você será redirecionado automaticamente para a plataforma.",
-      type: "Info",
-    });
-    setIsPaymentStatusOpen(true);
-  };
-
-  const closePaymentStatus = () => {
-    setIsPaymentStatusOpen(false);
-  };
-
-  const closePaymentCard = () => {
-    setIsPaymentCardOpen(false);
-    setPreferenceId(null);
-    setOrderAmount(DEFAULT_CREDIT_PRICE);
-    createOrderMutation.reset();
-    setIsPaymentFlowActive(false); // <<-- DESTRAVA O FLUXO
-  };
-
-  const handlePaymentSuccess = useCallback(async () => {
-    setIsPaymentFlowActive(false); // <<-- DESTRAVA O FLUXO
-    setPreferenceId(null);
-    setIsPaymentCardOpen(false);
-    await refresh();
-    redirectToPlatform();
-  }, [refresh, redirectToPlatform]);
 
   const toggleSessionPanel = () => {
     setIsSessionPanelOpen((prev) => !prev);
   };
 
   const handleLogout = async () => {
-    stopBalancePolling();
     // Reutiliza o fluxo centralizado (API + remoção do cookie) mantido no
     // contexto. Aqui não precisamos redirecionar porque o usuário já está na
     // landing page.
@@ -1485,113 +1152,6 @@ export default function LandingPage() {
       </main>
 
       <AuthModal isOpen={isAuthModalOpen} onClose={handleCloseAuth} defaultView={authView} />
-
-      {isPaymentStatusOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 px-4">
-          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 text-center shadow-2xl md:p-8">
-            <button
-              type="button"
-              onClick={closePaymentStatus}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
-              title="Fechar aviso"
-            >
-              <LucideIcon name="X" className="h-5 w-5" />
-            </button>
-            <LucideIcon
-              name={paymentStatus.type === "success" ? "CircleCheckBig" : paymentStatus.type === "error" ? "TriangleAlert" : "Info"}
-              className={clsx(
-                "mx-auto mb-4 h-12 w-12",
-                paymentStatus.type === "success"
-                  ? "text-green-500"
-                  : paymentStatus.type === "error"
-                  ? "text-red-500"
-                  : "text-slate-500"
-              )}
-            />
-            <h2 className="mb-2 text-xl font-bold text-slate-800">{paymentStatus.title}</h2>
-            <p className="text-slate-700">{paymentStatus.message}</p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                className="flex-1 rounded-lg bg-green-600 py-2.5 font-semibold text-white hover:bg-green-700"
-                onClick={() => {
-                  closePaymentStatus();
-                  if (!isAuthenticated) {
-                    handleOpenAuth("login");
-                  }
-                }}
-              >
-                Continuar
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-lg bg-slate-200 py-2.5 font-semibold text-slate-800 hover:bg-slate-300"
-                onClick={closePaymentStatus}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isPaymentCardOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <button
-              type="button"
-              onClick={closePaymentCard}
-              className="absolute right-5 top-5 text-slate-400 hover:text-slate-600"
-              title="Fechar"
-            >
-              <LucideIcon name="X" className="h-5 w-5" />
-            </button>
-            <div className="pr-8">
-              <h3 className="text-xl font-semibold text-slate-900">Gerar pagamento PIX</h3>
-              <p className="mt-1 text-sm text-slate-600">Valor único de {formattedOrderAmount}.</p>
-            </div>
-            {createOrderMutation.isError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {extractErrorMessage(createOrderMutation.error)}
-              </div>
-            )}
-            <div className="mt-6">
-              {preferenceId ? (
-                <MercadoPagoBrick
-                  preferenceId={preferenceId}
-                  onPaymentCreated={() => startBalancePolling()}
-                  onPaymentSuccess={handlePaymentSuccess}
-                />
-              ) : (
-                <div className="space-y-4">
-                  <button
-                    type="button"
-                    className="w-full rounded-xl bg-green-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70"
-                    onClick={handleBuyCredits}
-                    disabled={createOrderMutation.isPending}
-                  >
-                    {createOrderMutation.isPending
-                      ? "Gerando PIX..."
-                      : `Gerar PIX de ${formattedOrderAmount}`}
-                  </button>
-                  <p className="text-center text-xs text-slate-500">
-                    Você verá o QR Code oficial do Mercado Pago em seguida.
-                  </p>
-                </div>
-              )}
-            </div>
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                className="text-sm font-medium text-green-700 hover:text-green-800"
-                onClick={handleCheckBalance}
-              >
-                Já paguei, verificar saldo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div id="session-fab" className="fixed bottom-4 left-4 z-[70]">
         <div

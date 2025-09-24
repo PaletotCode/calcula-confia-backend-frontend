@@ -9,6 +9,7 @@ import { createOrder, extractErrorMessage } from "@/lib/api";
 import { LucideIcon } from "@/components/LucideIcon";
 import { inferPurchaseFromUser } from "@/utils/user-credits";
 import MercadoPagoBrick from "@/components/MercadoPagoBrick";
+import { useSessionManager } from "@/components/SessionManager";
 
 const Calculator = dynamic(() => import("@/components/Calculator"), { ssr: false });
 
@@ -18,6 +19,7 @@ function PlatformContent() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, refresh } = useAuth();
   const searchParams = useSearchParams();
+  const { status } = useSessionManager();
   const [isPaymentCardOpen, setIsPaymentCardOpen] = useState(false);
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   const [orderAmount, setOrderAmount] = useState<number>(DEFAULT_PLATFORM_CREDIT_PRICE);
@@ -30,6 +32,8 @@ function PlatformContent() {
     () => currencyFormatter.format(orderAmount),
     [currencyFormatter, orderAmount]
   );
+
+  const sessionAllowsAccess = status === "READY_FOR_PLATFORM" || status === "PAYMENT_IN_PROGRESS";
 
   const createOrderMutation = useMutation({
     mutationFn: createOrder,
@@ -96,15 +100,36 @@ function PlatformContent() {
     [user]
   );
 
+  const waitingForSessionUnlock = sessionAllowsAccess && !hasSuccessfulPayment;
+
   useEffect(() => {
     if (isLoading) {
       return;
     }
 
-    if (!isAuthenticated || !hasSuccessfulPayment) {
+    if (!isAuthenticated) {
       router.replace("/");
+      return;
     }
-  }, [hasSuccessfulPayment, isAuthenticated, isLoading, router]);
+
+    if (hasSuccessfulPayment || sessionAllowsAccess) {
+      return;
+    }
+
+    router.replace("/");
+  }, [hasSuccessfulPayment, isAuthenticated, isLoading, router, sessionAllowsAccess]);
+
+  const accessDeniedScreen = (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+      <div className="max-w-md rounded-3xl border border-white/10 bg-white/10 p-8 text-center shadow-2xl">
+        <h1 className="text-2xl font-semibold">Acesso indisponível</h1>
+        <p className="mt-4 text-sm leading-relaxed text-white/80">
+          Para entrar na plataforma, finalize um pagamento aprovado no Mercado Pago usando esta conta. Assim que o pagamento
+          for confirmado, seu acesso será liberado automaticamente.
+        </p>
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -116,18 +141,22 @@ function PlatformContent() {
     );
   }
 
-  if (!isAuthenticated || !hasSuccessfulPayment) {
+  if (!isAuthenticated) {
+    return accessDeniedScreen;
+  }
+
+  if (waitingForSessionUnlock) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <div className="max-w-md rounded-3xl border border-white/10 bg-white/10 p-8 text-center shadow-2xl">
-          <h1 className="text-2xl font-semibold">Acesso indisponível</h1>
-          <p className="mt-4 text-sm leading-relaxed text-white/80">
-            Para entrar na plataforma, finalize um pagamento aprovado no Mercado Pago usando esta conta. Assim que o pagamento
-            for confirmado, seu acesso será liberado automaticamente.
-          </p>
+        <div className="rounded-3xl border border-white/10 bg-white/5 px-6 py-4 text-center text-sm text-white/80 shadow-2xl">
+          Finalizando a liberacao do seu acesso...
         </div>
       </div>
     );
+  }
+
+  if (!hasSuccessfulPayment) {
+    return accessDeniedScreen;
   }
 
   return (
@@ -135,17 +164,17 @@ function PlatformContent() {
       <Calculator />
 
       {isPaymentCardOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-6 sm:py-8 md:items-center">
+          <div className="relative flex w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
             <button
               type="button"
               onClick={closePaymentCard}
-              className="absolute right-5 top-5 text-slate-400 hover:text-slate-600"
+              className="absolute right-5 top-5 text-slate-400 transition hover:text-slate-600"
               title="Fechar"
             >
               <LucideIcon name="X" className="h-5 w-5" />
             </button>
-            <div className="pr-8">
+            <div className="flex-shrink-0 pr-8">
               <h3 className="text-xl font-semibold text-slate-900">Gerar pagamento PIX</h3>
               <p className="mt-1 text-sm text-slate-600">Valor único de {formattedOrderAmount}.</p>
             </div>
@@ -154,15 +183,16 @@ function PlatformContent() {
                 {extractErrorMessage(error)}
               </div>
             )}
-            <div className="mt-6">
+            <div className="mt-6 flex-1">
               {preferenceId ? (
                 <MercadoPagoBrick
                   preferenceId={preferenceId}
                   onPaymentCreated={() => void refresh()}
                   onPaymentSuccess={handlePaymentSuccess}
+                  formattedAmount={formattedOrderAmount}
                 />
               ) : (
-                <div className="space-y-4">
+                <div className="flex h-full flex-col justify-center gap-4">
                   <button
                     type="button"
                     className="w-full rounded-xl bg-green-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70"

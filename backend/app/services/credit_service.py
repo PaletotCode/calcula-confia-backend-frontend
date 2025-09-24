@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging_config import get_logger
@@ -16,12 +16,18 @@ class CreditService:
     @staticmethod
     async def has_processed_payment(db: AsyncSession, payment_id: str) -> bool:
         """Retorna True se ja existe transacao vinculada ao pagamento informado."""
-        result = await db.execute(
-            select(CreditTransaction).where(
-                CreditTransaction.reference_id == f"mp_{payment_id}"
-            )
+        stmt = select(func.count(CreditTransaction.id)).where(
+            CreditTransaction.reference_id == f"mp_{payment_id}"
         )
-        return result.scalar_one_or_none() is not None
+        result = await db.execute(stmt)
+        total = result.scalar_one()
+        if total and total > 1:
+            logger.warning(
+                "Transacao %s possui %s registros duplicados associados.",
+                payment_id,
+                total,
+            )
+        return total > 0
 
     @staticmethod
     async def _refresh_user_legacy_balance(db: AsyncSession, user: User) -> None:

@@ -1,4 +1,4 @@
-import type { User } from "@/lib/api";
+import type { CreditsBalanceResponse, User } from "@/lib/api";
 
 const CREDIT_KEYS = [
   "credits",
@@ -54,17 +54,27 @@ function parseNumericValue(value: unknown): number | null {
   return null;
 }
 
-export function extractCreditsFromUser(user: User | null): number {
-  if (!user) {
+function extractCreditsFromRecord(
+  record: Record<string, unknown> | null | undefined,
+): number {
+  if (!record) {
     return 0;
   }
+
   for (const key of CREDIT_KEYS) {
-    const numeric = parseNumericValue((user as Record<string, unknown>)[key]);
+    const numeric = parseNumericValue(record[key]);
     if (numeric !== null) {
       return numeric;
     }
   }
   return 0;
+}
+
+export function extractCreditsFromUser(user: User | null): number {
+  if (!user) {
+    return 0;
+  }
+  return extractCreditsFromRecord(user as Record<string, unknown>);
 }
 
 export function inferPurchaseFromUser(user: User | null): boolean {
@@ -97,4 +107,22 @@ export function inferPurchaseFromUser(user: User | null): boolean {
     }
   }
   return false;
+}
+
+export function extractCreditsFromBalanceResponse(
+  balance: CreditsBalanceResponse | null | undefined,
+): number {
+  if (typeof balance === "number" && Number.isFinite(balance)) {
+    return balance;
+  }
+
+  if (Array.isArray(balance)) {
+    return 0;
+  }
+
+  if (balance && typeof balance === "object") {
+    return extractCreditsFromRecord(balance as Record<string, unknown>);
+  }
+
+  return 0;
 }
