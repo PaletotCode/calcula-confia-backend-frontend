@@ -199,7 +199,9 @@ export default function SessionManager({ children }: { children: ReactNode }) {
       return;
     }
 
-    readyRefreshTriggeredRef.current = false;
+    if (status !== "LOADING") {
+      readyRefreshTriggeredRef.current = false;
+    }
 
     if (
       status === "NEEDS_PAYMENT" &&
