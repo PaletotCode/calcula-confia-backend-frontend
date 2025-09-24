@@ -177,7 +177,9 @@ export default function SessionManager({ children }: { children: ReactNode }) {
       setPreferenceId(null);
       setOrderAmount(DEFAULT_CREDIT_PRICE);
       resetCreateOrder();
+      if (!isLoading) {
       readyRefreshTriggeredRef.current = false;
+    }
       autoOpenTriggeredRef.current = false;
       return;
     }
@@ -216,6 +218,7 @@ export default function SessionManager({ children }: { children: ReactNode }) {
     }
   }, [
     isAuthenticated,
+    isLoading,
     isPaymentModalOpen,
     pathname,
     refresh,
