@@ -71,6 +71,13 @@ function PlatformContent() {
     triggerCreateOrder();
   };
 
+  const openPaymentCard = () => {
+    setIsPaymentCardOpen(true);
+    setPreferenceId(null);
+    setOrderAmount(DEFAULT_PLATFORM_CREDIT_PRICE);
+    resetCreateOrder();
+  };
+
   const closePaymentCard = () => {
     setIsPaymentCardOpen(false);
     setPreferenceId(null);
@@ -174,7 +181,7 @@ function PlatformContent() {
 
   return (
     <>
-      <Calculator />
+      <Calculator onRequestBuyCredits={openPaymentCard} />
 
       {isPaymentCardOpen && (
         <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-6 sm:py-8 md:items-center">
