@@ -1,15 +1,12 @@
-from ..models_schemas.models import SelicRate, VerificationCode, VerificationType
-from dateutil.relativedelta import relativedelta
-from ..models_schemas.schemas import UserResponse 
-from ..models_schemas.models import VerificationCode, CreditTransaction
+from ..models_schemas.models import VerificationCode, VerificationType
+from ..models_schemas.schemas import UserResponse
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 import time
 import random
 import string
 from datetime import datetime, timedelta
-from sqlalchemy import cast, or_
-import sqlalchemy as sa
+from sqlalchemy import or_
 from ..core.background_tasks import send_verification_email, send_password_reset_email
 
 from fastapi import HTTPException, status, Request
@@ -22,8 +19,8 @@ from passlib.exc import PasswordValueError
 from ..core.logging_config import get_logger, LogContext
 from ..core.audit import AuditService, SecurityMonitor
 from ..models_schemas.models import (
-    User, QueryHistory, AuditAction, 
-    CreditTransaction, AuditLog, SelicRate, IPCARate
+    User, QueryHistory, AuditAction,
+    CreditTransaction, AuditLog
 )
 from ..models_schemas.schemas import (
     UserCreate, CalculationRequest, CalculationResponse,
@@ -560,7 +557,6 @@ class CalculationService:
         Executa o cálculo com nova lógica de créditos válidos
         """
         start_time = time.time()
-        PIS_COFINS_FACTOR = Decimal("0.037955")
 
         async with AuditService.audit_context(
             db=db,
@@ -593,65 +589,22 @@ class CalculationService:
                 if len(calculation_data.bills) > 12:
                     raise HTTPException(status.HTTP_400_BAD_REQUEST, "Você pode informar no máximo 12 faturas.")
 
-                provided_bills = {}
+                provided_bills: Dict[str, Decimal] = {}
                 for bill in calculation_data.bills:
                     try:
-                        bill_date = datetime.strptime(bill.issue_date, "%Y-%m").date().replace(day=1)
-                        provided_bills[bill_date] = Decimal(str(bill.icms_value))
+                        datetime.strptime(bill.issue_date, "%Y-%m")
                     except ValueError:
-                        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Formato de data inválido: {bill.issue_date}. Use YYYY-MM.")
+                        raise HTTPException(
+                            status.HTTP_400_BAD_REQUEST,
+                            f"Formato de data inválido: {bill.issue_date}. Use YYYY-MM."
+                        )
 
-                most_recent_date = max(provided_bills.keys())
+                    provided_bills[bill.issue_date] = Decimal(str(bill.icms_value))
 
-                # Período de 120 meses
-                start_period_date = most_recent_date - relativedelta(months=119)
+                total_decimal, breakdown = compute_total_refund(provided_icms=provided_bills)
 
-                # Buscar taxas IPCA do período
-                ipca_stmt = select(IPCARate).where(
-                    and_(
-                        func.to_date(
-                            cast(IPCARate.year, sa.Text) + '-' + cast(IPCARate.month, sa.Text),
-                            'YYYY-MM'
-                        ) >= start_period_date,
-                        func.to_date(
-                            cast(IPCARate.year, sa.Text) + '-' + cast(IPCARate.month, sa.Text),
-                            'YYYY-MM'
-                        ) <= most_recent_date
-                    )
-                )
-                ipca_results = await db.execute(ipca_stmt)
-                ipca_rates_map = {datetime(r.year, r.month, 1).date(): r.rate for r in ipca_results.scalars()}
-
-                if not ipca_rates_map:
-                    raise HTTPException(status.HTTP_404_NOT_FOUND, "Dados do IPCA não encontrados para o período solicitado.")
-
-                # Buscar taxas SELIC do período
-                selic_stmt = select(SelicRate).where(
-                    and_(
-                        func.to_date(
-                            cast(SelicRate.year, sa.Text) + '-' + cast(SelicRate.month, sa.Text),
-                            'YYYY-MM'
-                        ) >= start_period_date,
-                        func.to_date(
-                            cast(SelicRate.year, sa.Text) + '-' + cast(SelicRate.month, sa.Text),
-                            'YYYY-MM'
-                        ) <= most_recent_date
-                    )
-                )
-                selic_results = await db.execute(selic_stmt)
-                selic_rates_map = {datetime(r.year, r.month, 1).date(): r.rate for r in selic_results.scalars()}
-
-                if not selic_rates_map:
-                    # Mantém compatibilidade: se faltar SELIC, assume 0% (mas recomenda-se popular)
-                    selic_rates_map = {}
-
-                # Cálculo segundo a nova especificação (IPCA + indevido + SELIC cumulativa)
-                total_decimal, _breakdown = compute_total_refund(
-                    provided_icms=provided_bills,
-                    most_recent=most_recent_date,
-                    ipca_rates=ipca_rates_map,
-                    selic_rates=selic_rates_map,
-                )
+                resultado_final = float(total_decimal)
+                media_icms = breakdown.get("media_icms", Decimal("0")) if breakdown else Decimal("0")
 
                 resultado_final = float(total_decimal)
 
@@ -688,8 +641,8 @@ class CalculationService:
                 
                     history_record = QueryHistory(
                         user_id=user.id,
-                        icms_value=sum(provided_bills.values()) / len(provided_bills),
-                        months=120,
+                        icms_value=Decimal(str(media_icms)),
+                        months=len(provided_bills),
                         calculated_value=Decimal(str(resultado_final)),
                         calculation_time_ms=int((time.time() - start_time) * 1000),
                         ip_address=ip_address,

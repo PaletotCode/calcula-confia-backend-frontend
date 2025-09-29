@@ -1,5 +1,4 @@
 import enum
-import sqlalchemy as sa
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Numeric, Text,
@@ -113,19 +112,6 @@ class CreditTransaction(Base):
 
     user = relationship("User", back_populates="credit_transactions")
 
-
-class SelicRate(Base):
-    __tablename__ = "selic_rates"
-    id = Column(Integer, primary_key=True, index=True)
-    year = Column(Integer, nullable=False)
-    month = Column(Integer, nullable=False)
-    # Armazena a taxa como um decimal. Ex: 1.16% será 0.0116
-    rate = Column(Numeric(10, 5), nullable=False)
-    
-    __table_args__ = (
-        sa.UniqueConstraint('year', 'month', name='_year_month_uc'),
-    )
-
 class PaymentSession(Base):
     __tablename__ = "payment_sessions"
 
@@ -144,18 +130,5 @@ class PaymentSession(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     user = relationship("User", back_populates="payment_sessions")
-
-class IPCARate(Base):
-    __tablename__ = "ipca_rates"
-    id = Column(Integer, primary_key=True, index=True)
-    year = Column(Integer, nullable=False)
-    month = Column(Integer, nullable=False)
-    # Armazena a taxa como um decimal fracionário. Ex: 0,40% será 0.0040
-    rate = Column(Numeric(10, 6), nullable=False)
-
-    __table_args__ = (
-        sa.UniqueConstraint('year', 'month', name='_ipca_year_month_uc'),
-    )
-
 
 # REMOVIDO: Modelo UserPlan foi completamente removido conforme solicitado

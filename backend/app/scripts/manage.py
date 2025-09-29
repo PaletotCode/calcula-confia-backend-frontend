@@ -24,7 +24,7 @@ if _PROJECT_ROOT not in sys.path:
 from app.core.database import SessionLocal, engine, Base
 from app.core.config import settings
 from app.core.logging_config import configure_logging, get_logger
-from app.models_schemas.models import User, QueryHistory, AuditLog, SelicRate, IPCARate
+from app.models_schemas.models import User, QueryHistory, AuditLog
 from app.services.main_service import UserService
 from app.models_schemas.schemas import UserCreate
 
@@ -156,152 +156,6 @@ async def seed_sample_data():
         except Exception as e:
             print(f"❌ Erro ao criar dados: {e}")
 
-async def seed_selic_data(filepath: str):
-    """Popula o banco com dados da SELIC a partir de um arquivo de texto."""
-    print(f"Populando dados da SELIC do arquivo: {filepath}")
-    if not os.path.exists(filepath):
-        print(f"❌ Erro: Arquivo não encontrado em '{filepath}'")
-        return
-
-    async with SessionLocal() as db:
-        from decimal import Decimal
-
-        try:
-            with open(filepath, 'r') as f:
-                # Pular as duas primeiras linhas de cabeçalho
-                next(f)
-                next(f)
-
-                rates_to_add = []
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    parts = line.split()
-                    if len(parts) < 2:
-                        continue
-
-                    # O valor da taxa é a última parte, a data é a primeira
-                    date_part = parts[0]
-                    rate_part = parts[-1].replace(',', '.')
-
-                    try:
-                        year, month = map(int, date_part.split('.'))
-                        # A taxa no arquivo é percentual, então dividimos por 100
-                        rate_decimal = Decimal(rate_part) / Decimal(100)
-
-                        rates_to_add.append(
-                            SelicRate(year=year, month=month, rate=rate_decimal)
-                        )
-                    except (ValueError, IndexError):
-                        print(f"⚠️  Aviso: Linha ignorada por formato inválido: '{line}'")
-                        continue
-
-            if rates_to_add:
-                # Inserir em lote para melhor performance
-                db.add_all(rates_to_add)
-                await db.commit()
-                print(f"✅ {len(rates_to_add)} taxas SELIC inseridas com sucesso!")
-            else:
-                print("Nenhuma taxa SELIC encontrada para inserir.")
-
-        except Exception as e:
-            await db.rollback()
-            print(f"❌ Erro ao popular dados da SELIC: {e}")
-
-
-async def seed_ipca_data(filepath: str):
-    """Popula o banco com dados do IPCA a partir de um CSV no padrão 'data;valor'.
-
-    - data: aceita formatos como DD/MM/AAAA ou AAAA-MM-DD
-    - valor: percentual mensal (ex.: 0,40 para 0,40%)
-    """
-    print(f"Populando dados do IPCA do arquivo: {filepath}")
-    import csv
-    from datetime import datetime
-    from decimal import Decimal
-    if not os.path.exists(filepath):
-        print(f"❌ Erro: Arquivo não encontrado em '{filepath}'")
-        return
-
-    async with SessionLocal() as db:
-        try:
-            # Ler arquivo
-            with open(filepath, 'r', encoding='utf-8-sig', newline='') as f:
-                reader = csv.DictReader(f, delimiter=';')
-                rows = list(reader)
-
-            if not rows:
-                print("Nenhum dado encontrado no CSV.")
-                return
-
-            # Preparar upsert por (year, month)
-            parsed: list[tuple[int, int, Decimal]] = []
-
-            for r in rows:
-                ds = (r.get('data') or r.get('Data') or '').strip()
-                vs = (r.get('valor') or r.get('Valor') or '').strip()
-                if not ds or not vs:
-                    continue
-
-                dt: datetime | None = None
-                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%Y", "%Y-%m"):
-                    try:
-                        dt = datetime.strptime(ds, fmt)
-                        # Para formatos sem dia, fixar dia 1
-                        if fmt in ("%m/%Y", "%Y-%m"):
-                            dt = dt.replace(day=1)
-                        break
-                    except ValueError:
-                        continue
-                if not dt:
-                    print(f"⚠️  Aviso: Data inválida '{ds}', linha ignorada.")
-                    continue
-
-                # Tratar vírgula e porcentagem
-                vs_norm = vs.replace('%', '').replace(',', '.')
-                try:
-                    rate_fraction = Decimal(vs_norm) / Decimal(100)
-                except Exception:
-                    print(f"⚠️  Aviso: Valor inválido '{vs}', linha ignorada.")
-                    continue
-
-                parsed.append((dt.year, dt.month, rate_fraction))
-
-            if not parsed:
-                print("Nenhuma linha válida para inserir.")
-                return
-
-            # Buscar registros existentes para upsert
-            from sqlalchemy import select, tuple_ as sql_tuple
-            keys = set((y, m) for (y, m, _r) in parsed)
-            existing_stmt = select(IPCARate).where(
-                sql_tuple(IPCARate.year, IPCARate.month).in_(list(keys))
-            )
-            res = await db.execute(existing_stmt)
-            existing_map = {(r.year, r.month): r for r in res.scalars()}
-
-            to_add = []
-            updated = 0
-            for y, m, rate in parsed:
-                if (y, m) in existing_map:
-                    rec = existing_map[(y, m)]
-                    rec.rate = rate
-                    updated += 1
-                else:
-                    to_add.append(IPCARate(year=y, month=m, rate=rate))
-
-            if to_add:
-                db.add_all(to_add)
-            await db.commit()
-            print(f"✅ IPCA inserido: {len(to_add)} novos, {updated} atualizados.")
-
-        except Exception as e:
-            await db.rollback()
-            print(f"❌ Erro ao popular dados do IPCA: {e}")
-
-
 async def cleanup_old_logs():
     """Limpar logs de auditoria antigos (mais de 1 ano)"""
     async with SessionLocal() as db:
@@ -363,8 +217,6 @@ async def main():
         print("  seed-data                       - Popular com dados exemplo")
         print("  cleanup-logs                    - Limpar logs antigos")
         print("  stats                           - Mostrar estatísticas")
-        print("  seed-selic <filepath>             - Popular banco com taxas SELIC")
-        print("  seed-ipca <filepath>              - Popular banco com IPCA mensal (CSV)")
         print("  create-tables                   - Criar tabelas que faltam (sem dropar)")
         print("  upgrade-db [revision]           - Executar migrações Alembic (padrão head)")
         print("\nExemplo: python scripts/manage.py create-admin admin@exemplo.com minhasenha123A")
@@ -390,16 +242,6 @@ async def main():
     elif command == "stats":
         await show_system_stats()
     
-    elif command == "seed-selic":
-        if len(sys.argv) != 3:
-            print("❌ Uso: seed-selic <caminho_para_o_arquivo.txt>")
-            return
-        await seed_selic_data(sys.argv[2])
-    elif command == "seed-ipca":
-        if len(sys.argv) != 3:
-            print("❌ Uso: seed-ipca <caminho_para_o_arquivo.csv>")
-            return
-        await seed_ipca_data(sys.argv[2])
     elif command == "create-tables":
         await create_tables()
 

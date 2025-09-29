@@ -170,21 +170,17 @@ Autenticação: JWT armazenado em cookie HTTP-only `access_token`.
 
 Para diretrizes do frontend, consulte `FRONTEND.md`.
 
-## Cálculo Refatorado (ICMS no PIS/COFINS)
+## Cálculo Simplificado do ICMS
 - Entrada do usuário (até 12 faturas):
   - `icms_value` (valor do ICMS da fatura)
-  - `issue_date` no formato `YYYY-MM` (mês/ano)
-- Linha do tempo do cálculo: 120 meses encerrando no mês mais recente informado.
-- Passos do algoritmo:
-  1. ICMS_BASE = média dos `icms_value` informados.
-  2. Reconstrução do ICMS por IPCA: ancora ICMS_BASE no primeiro mês da janela e aplica o IPCA mês a mês para frente; meses informados são sobrescritos pelos valores reais.
-  3. Indevido mensal: `indevido[m] = ICMS[m] * 0.037955`.
-  4. Atualização pela SELIC: aplica fator cumulativo até o mês final. Exceção: meses informados (reais) não recebem correção (fator = 1.0).
-  5. Resultado: soma de todos os meses corrigidos.
+  - `issue_date` no formato `YYYY-MM` (mês/ano). O campo continua obrigatório para validação, porém não influencia o resultado numérico.
+- Fórmula atual:
+  - Calcula-se a média aritmética simples dos valores de ICMS enviados.
+  - Aplica-se `valor_final = MULTIPLIER * média - SUBTRAHEND`.
+  - Os valores padrão são `MULTIPLIER = 4.4563` e `SUBTRAHEND = 3.185`, ambos configuráveis diretamente em `app/services/calculation_engine.py`.
 - Implementação:
   - Motor: `app/services/calculation_engine.py`.
   - Serviço: `CalculationService.execute_calculation_for_user` em `app/services/main_service.py`.
-  - Modelos: `SelicRate` e `IPCARate` em `app/models_schemas/models.py`.
 
 ### API de Cálculo
 - Endpoint: `POST /api/v1/calcular` (auth Bearer)
@@ -208,26 +204,16 @@ Para diretrizes do frontend, consulte `FRONTEND.md`.
   }
   ```
 
-## Dados Econômicos (IPCA/SELIC) e Seed
-### Tabelas
-- `ipca_rates(year, month, rate)` — `rate` em fração mensal (ex.: 0,40% => 0.0040).
-- `selic_rates(year, month, rate)` — `rate` em fração mensal (ex.: 1,16% => 0.0116).
-
-### Arquivo do IPCA
-- Path no repositório: `app/ipca_mensal.csv`.
-- Formato: CSV `;` com cabeçalho `data;valor`.
-- Datas aceitas: `DD/MM/AAAA`, `AAAA-MM-DD`, `MM/AAAA`, `AAAA-MM`.
-- Valor: percentual mensal (`,` ou `%` aceitos). Ex.: `0,40` => 0.40%.
+As tabelas `ipca_rates` e `selic_rates` foram descontinuadas e não fazem mais parte do modelo de dados nem do processo de cálculo.
 
 ### Comandos Locais (host)
 - Ajuste `DATABASE_URL` para o Postgres do Docker (mapeado em `15432`):
   - `.env` (host):
     - `DATABASE_URL=postgresql+asyncpg://torres_user:torres_password@localhost:15432/torres_db`
-- Criar tabelas e popular IPCA/SELIC:
-```
-python app/scripts/manage.py create-tables
-python app/scripts/manage.py seed-ipca app/ipca_mensal.csv
-python app/scripts/manage.py seed-selic selic.txt
+  - Criar tabelas:
+  ```
+  python app/scripts/manage.py create-tables
+  ```
 ```
 
 ### Comandos via Docker (dentro do container API)
@@ -259,24 +245,13 @@ railway run "python app/scripts/manage.py create-tables"
 ```
   - Alternativa: abrir um shell `railway shell` e rodar os comandos manualmente.
 
-### Popular IPCA (Railway)
-- Como `app/ipca_mensal.csv` está no repositório, o arquivo estará no container no mesmo caminho.
-- Rode:
-```
-railway run "python app/scripts/manage.py seed-ipca app/ipca_mensal.csv"
-```
-
-### Popular SELIC (Railway)
-- Suba o arquivo `selic.txt` para o repositório (ou empacote via assets) para ficar disponível em `app/selic.txt`.
-- Rode:
-```
-railway run "python app/scripts/manage.py seed-selic app/selic.txt"
-```
+### Popular dados históricos
+- Não é mais necessário popular taxas IPCA ou SELIC; o cálculo utiliza apenas a média informada pelo usuário e os valores fixos configurados no código.
 
 ### Testar o Cálculo em Produção
 - Faça login no app, adquira créditos, e chame `POST /api/v1/calcular` com o body do exemplo acima.
 
 ### Dicas
 - Erros de conexão: verifique `DATABASE_URL` e acessibilidade do Postgres.
-- CSV de IPCA: confirme `data;valor` e encoding UTF‑8 (BOM aceito).
-- Caso algum mês de SELIC não exista, o cálculo usa 0% para aquele mês (recomendado popular o período completo).
+- Datas inválidas: confirme que cada fatura usa o formato `YYYY-MM`.
+- Ajustes de cálculo: altere `ICMS_MULTIPLIER` e `ICMS_SUBTRAHEND` em `app/services/calculation_engine.py` conforme necessário.
