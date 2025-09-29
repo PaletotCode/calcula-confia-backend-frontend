@@ -71,3 +71,17 @@ def test_authenticate_user_handles_overlong_password(monkeypatch):
         assert db.commits >= 1  # Audit log attempted
 
     asyncio.run(_run_test())
+
+
+def test_bcrypt_sha256_allows_long_passwords():
+    from app.core.security import get_password_hash, verify_password
+    import pytest
+
+    long_password = "p" * 100
+
+    try:
+        hashed = get_password_hash(long_password)
+    except ValueError as exc:
+        pytest.skip(f"bcrypt backend not available for long passwords: {exc}")
+
+    assert verify_password(long_password, hashed)

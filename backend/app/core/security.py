@@ -11,7 +11,12 @@ from .database import get_db
 from ..models_schemas.models import User
 
 # Configuração de criptografia
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Usamos bcrypt_sha256 para aceitar senhas com mais de 72 bytes. Mantemos bcrypt
+# como esquema legado para validar hashes existentes salvos anteriormente.
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],
+    deprecated="auto",
+)
 
 # Leitura de token via cookie
 def get_token_from_cookie(request: Request) -> str:

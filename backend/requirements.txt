@@ -8,6 +8,8 @@ pydantic-settings==2.1.0
 # CORREÇÃO: Usar PyJWT ao invés de python-jose
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# Bcrypt 4.x remove __about__ attribute required by passlib 1.7.4
+bcrypt==3.2.2
 
 python-multipart==0.0.6
 alembic==1.13.1
