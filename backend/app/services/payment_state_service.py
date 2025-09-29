@@ -5,11 +5,11 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging_config import get_logger
-from ..models_schemas.models import PaymentSession, User
+from ..models_schemas.models import CreditTransaction, PaymentSession, User
 from .main_service import CalculationService
 
 
@@ -283,6 +283,45 @@ class PaymentStateService:
             updated_at=record.updated_at,
             last_sync_at=record.last_sync_at,
         )
+    
+    @staticmethod
+    async def _has_successful_payment(
+        db: AsyncSession, *, user_id: int
+    ) -> bool:
+        """Verifica historico de pagamento concluido.
+
+        Primeiro consulta sessoes finalizadas; se nao encontrar, verifica
+        transacoes de compra como fallback.
+        """
+
+        session_stmt = (
+            select(PaymentSession.id)
+            .where(
+                PaymentSession.user_id == user_id,
+                PaymentSession.status.in_(
+                    (PaymentSessionStatus.COMPLETED, PaymentSessionStatus.APPROVED)
+                ),
+            )
+            .limit(1)
+        )
+        session_result = await db.execute(session_stmt)
+        if session_result.scalar_one_or_none() is not None:
+            return True
+
+        purchase_stmt = (
+            select(CreditTransaction.id)
+            .where(
+                CreditTransaction.user_id == user_id,
+                CreditTransaction.transaction_type == "purchase",
+                or_(
+                    CreditTransaction.reference_id.is_(None),
+                    CreditTransaction.reference_id.like("mp_%"),
+                ),
+            )
+            .limit(1)
+        )
+        purchase_result = await db.execute(purchase_stmt)
+        return purchase_result.scalar_one_or_none() is not None
 
     @staticmethod
     async def get_user_state(
@@ -293,16 +332,21 @@ class PaymentStateService:
         credits_balance = await CalculationService._get_valid_credits_balance(db, user.id)
         latest_session = await PaymentStateService.fetch_latest_session(db, user_id=user.id)
 
-        can_access = credits_balance > 0
-        state = PaymentAccessState.NEEDS_PAYMENT
+        has_paid_history = False
+        if credits_balance <= 0:
+            from .credit_service import CreditService  # Local import to avoid circular dependency
 
-        if can_access:
-            state = PaymentAccessState.READY
-        elif latest_session:
-            if latest_session.status == PaymentSessionStatus.COMPLETED:
-                state = PaymentAccessState.READY
-                can_access = True
-            elif latest_session.status in (PaymentSessionStatus.PENDING, PaymentSessionStatus.APPROVED):
+            has_paid_history = await CreditService.user_has_paid_access(db, user.id)
+            if not has_paid_history:
+                has_paid_history = await PaymentStateService._has_successful_payment(
+                    db, user_id=user.id
+                )
+
+        can_access = credits_balance > 0 or has_paid_history
+        state = PaymentAccessState.READY if can_access else PaymentAccessState.NEEDS_PAYMENT
+
+        if not can_access and latest_session:
+            if latest_session.status in (PaymentSessionStatus.PENDING, PaymentSessionStatus.APPROVED):
                 state = PaymentAccessState.AWAITING
             elif latest_session.status in (PaymentSessionStatus.FAILED, PaymentSessionStatus.EXPIRED):
                 state = PaymentAccessState.FAILED

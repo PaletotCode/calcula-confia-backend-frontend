@@ -18,6 +18,7 @@ from sqlalchemy import select, func, and_, desc
 from sqlalchemy.exc import IntegrityError
 
 from ..core.security import get_password_hash, verify_password
+from passlib.exc import PasswordValueError
 from ..core.logging_config import get_logger, LogContext
 from ..core.audit import AuditService, SecurityMonitor
 from ..models_schemas.models import (
@@ -430,7 +431,28 @@ class UserService:
                     )
                 
                 # Verificar senha
-                if not verify_password(password, user.hashed_password):
+                try:
+                    password_valid = verify_password(password, user.hashed_password)
+                except PasswordValueError as exc:
+                    logger.warning(
+                        "Password verification failed due to invalid password input",
+                        user_id=user.id,
+                        error=str(exc)
+                    )
+                    await AuditService.log_action(
+                        db=db,
+                        action=AuditAction.LOGIN,
+                        user_id=user.id,
+                        request=request,
+                        success=False,
+                        error_message="Invalid password"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid credentials"
+                    )
+
+                if not password_valid:
                     await AuditService.log_action(
                         db=db,
                         action=AuditAction.LOGIN,
@@ -550,11 +572,19 @@ class CalculationService:
             try:
                 # Verificar créditos válidos em tempo real
                 valid_credits = await CalculationService._get_valid_credits_balance(db, user.id)
-                
-                if valid_credits <= 0:
+                from .credit_service import CreditService
+
+                has_lifetime_access = await CreditService.user_has_paid_access(db, user.id)
+
+                if valid_credits <= 0 and not has_lifetime_access:
                     raise HTTPException(
                         status_code=status.HTTP_402_PAYMENT_REQUIRED,
                         detail="Insufficient valid credits"
+                    )
+                if valid_credits <= 0 and has_lifetime_access:
+                    logger.info(
+                        "Usuário com acesso vitalício identificado; liberando cálculo sem créditos",
+                        user_id=user.id
                     )
                 
                 # Validações de entrada
@@ -634,17 +664,24 @@ class CalculationService:
                             detail="Insufficient valid credits"
                         )
                 
-                    # Registrar transacao de uso de credito
-                    usage_transaction = CreditTransaction(
-                        user_id=user.id,
-                        transaction_type="usage",
-                        amount=-1,
-                        balance_before=balance_before_usage,
-                        balance_after=balance_before_usage - 1,
-                        description="Calculo detalhado de ICMS",
-                        reference_id=None
-                    )
-                    db.add(usage_transaction)
+                    usage_transaction = None
+                    if balance_before_usage > 0:
+                        # Registrar transacao de uso de credito
+                        usage_transaction = CreditTransaction(
+                            user_id=user.id,
+                            transaction_type="usage",
+                            amount=-1,
+                            balance_before=balance_before_usage,
+                            balance_after=balance_before_usage - 1,
+                            description="Calculo detalhado de ICMS",
+                            reference_id=None
+                        )
+                        db.add(usage_transaction)
+                    else:
+                        logger.info(
+                            "Pulando consumo de crédito por acesso vitalício",
+                            user_id=user.id
+                        )
                 
                     # Salvar historico
                     ip_address, user_agent = AuditService.extract_client_info(request) if request else (None, None)
@@ -661,9 +698,11 @@ class CalculationService:
                     db.add(history_record)
                     await db.flush()
                 
-                    usage_transaction.reference_id = f"calc_{history_record.id}"
-                
-                    user.credits = max(0, balance_before_usage - 1)
+                    if usage_transaction:
+                        usage_transaction.reference_id = f"calc_{history_record.id}"
+                        user.credits = max(0, balance_before_usage - 1)
+                    else:
+                        user.credits = max(0, balance_before_usage)
                 
                     await db.commit()
                 # Calcular saldo atualizado de créditos válidos

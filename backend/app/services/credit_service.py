@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.logging_config import get_logger
@@ -12,6 +12,19 @@ logger = get_logger(__name__)
 
 class CreditService:
     """Centraliza operacoes de credito (compra e bonus de indicacao)."""
+
+    @staticmethod
+    async def user_has_paid_access(db: AsyncSession, user_id: int) -> bool:
+        """Retorna True se o usuario possui alguma compra registrada."""
+        stmt = select(func.count(CreditTransaction.id)).where(
+            and_(
+                CreditTransaction.user_id == user_id,
+                CreditTransaction.transaction_type == "purchase",
+            )
+        )
+        result = await db.execute(stmt)
+        total = result.scalar() or 0
+        return total > 0
 
     @staticmethod
     async def has_processed_payment(db: AsyncSession, payment_id: str) -> bool:
