@@ -120,9 +120,12 @@ export function extractCreditsFromBalanceResponse(
     return 0;
   }
 
-  if (balance && typeof balance === "object") {
-    return extractCreditsFromRecord(balance as Record<string, unknown>);
-  }
+  const normalizedBalance = balance as unknown;
+
+  if (normalizedBalance && typeof normalizedBalance === "object") {
+    return extractCreditsFromRecord(normalizedBalance as Record<string, unknown>);
+
+ }
 
   return 0;
 }

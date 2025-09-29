@@ -5,7 +5,7 @@ const DEFAULT_API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   (process.env.NODE_ENV === "development"
     ? "http://localhost:8000/api/v1"
-    : "https://calculaconfia-production.up.railway.app/api/v1");
+    : "https://calculaconfia.com.br/api/v1");
 
 export const api = axios.create({
   baseURL: DEFAULT_API_BASE,
@@ -153,35 +153,46 @@ export interface PixPaymentResponse {
 }
 
 export interface CreditsBalanceResponse {
-  balance?: number;
-  credits?: number;
-  creditos?: number;
-  valid_credits?: number;
-  available_credits?: number;
-  [key: string]: unknown;
+  user_id: number;
+  valid_credits: number;
+  legacy_credits: number;
+  timestamp: string;
+}
+
+export interface ReferralStatsResponse {
+  referral_code: string;
+  total_referrals: number;
+  referral_credits_earned: number;
+  referral_credits_remaining: number;
 }
 
 export interface CreditHistoryItem {
-  id?: string | number;
-  transaction_type?: string;
-  type?: string;
-  description?: string;
-  reason?: string;
-  amount?: number;
-  created_at?: string;
+  id: string | number;
+  transaction_type: string;
+  amount: number;
+  balance_after: number;
+  description: string;
+  created_at: string;
+  expires_at?: string | null;
+  metadata?: Record<string, unknown> | string | null;
+  details?: Record<string, unknown> | string | null;
+  payload?: Record<string, unknown> | string | null;
+}
+
+export interface CreditHistoryCollectionResponse {
+  items?: CreditHistoryItem[];
+  results?: CreditHistoryItem[];
+  transactions?: CreditHistoryItem[];
+  history?: CreditHistoryItem[];
+  data?: CreditHistoryItem[];
   [key: string]: unknown;
 }
 
-export type CreditHistoryResponse =
-  | CreditHistoryItem[]
-  | {
-      items?: CreditHistoryItem[];
-      results?: CreditHistoryItem[];
-      transactions?: CreditHistoryItem[];
-      history?: CreditHistoryItem[];
-      data?: CreditHistoryItem[];
-      [key: string]: unknown;
-    };
+export type CreditHistoryResponse = CreditHistoryItem[] | CreditHistoryCollectionResponse;
+
+export interface GetCreditsHistoryParams {
+  limit?: number;
+}
 
 export const register = async (payload: RegisterPayload) => {
   const { data } = await api.post<RegistrationResponse>("/register", payload);
@@ -249,16 +260,32 @@ export const processPixPayment = async (payload: ProcessPixPaymentPayload) => {
 };
 
 export const getCreditsBalance = async () => {
-  const { data } = await api.get<CreditsBalanceResponse>(
-    "/credits/balance"
-  );
+  const { data } = await api.get<CreditsBalanceResponse>("/credits/balance");
   return data;
 };
 
-export const getCreditsHistory = async () => {
-  const { data } = await api.get<CreditHistoryResponse>(
-    "/credits/history"
-  );
+export const getCreditsHistory = async (params?: GetCreditsHistoryParams) => {
+  const { data } = await api.get<CreditHistoryResponse>("/credits/history", {
+    params,
+  });
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  const collection =
+    data.items ??
+    data.results ??
+    data.transactions ??
+    data.history ??
+    data.data ??
+    [];
+
+  return collection as CreditHistoryItem[];
+};
+
+export const getReferralStats = async () => {
+  const { data } = await api.get<ReferralStatsResponse>("/referral/stats");
   return data;
 };
 
