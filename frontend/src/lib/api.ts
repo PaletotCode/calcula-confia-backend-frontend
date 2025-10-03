@@ -205,6 +205,83 @@ export interface DetailedHistoryItem {
   [key: string]: unknown;
 }
 
+type DetailedHistoryBillSource = Record<string, unknown> | null | undefined;
+
+type DetailedHistoryItemSource = Record<string, unknown> & {
+  id?: unknown;
+  calculated_value?: unknown;
+  credits_used?: unknown;
+  created_at?: unknown;
+  bills?: DetailedHistoryBillSource[] | null;
+  bills_data?: DetailedHistoryBillSource[] | null;
+};
+
+function toNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value.replace(/,/g, "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeBill(entry: DetailedHistoryBillSource): DetailedHistoryBill | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const issueDateCandidate = record.issue_date ?? record.reference ?? record.label ?? record.data;
+  const issue_date = typeof issueDateCandidate === "string" ? issueDateCandidate : null;
+  const icms_value = toNumber(
+    record.icms_value ?? record.value ?? record.amount ?? record.valor ?? record.icms,
+  );
+
+  if (issue_date == null && icms_value == null) {
+    return null;
+  }
+
+  return {
+    ...record,
+    issue_date,
+    icms_value,
+  } as DetailedHistoryBill;
+}
+
+function normalizeDetailedHistoryItem(entry: unknown): DetailedHistoryItem | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as DetailedHistoryItemSource;
+  const idValue = record.id;
+
+  if (typeof idValue !== "string" && typeof idValue !== "number") {
+    return null;
+  }
+
+  const billsSource = Array.isArray(record.bills)
+    ? record.bills
+    : Array.isArray(record.bills_data)
+      ? record.bills_data
+      : [];
+
+  const normalizedBills = billsSource
+    .map((bill) => normalizeBill(bill))
+    .filter((bill): bill is DetailedHistoryBill => bill !== null);
+
+  return {
+    ...record,
+    id: idValue,
+    calculated_value: toNumber(record.calculated_value) ?? null,
+    credits_used: toNumber(record.credits_used) ?? undefined,
+    bills: normalizedBills,
+  } as DetailedHistoryItem;
+}
+
 export interface GetDetailedHistoryParams {
   limit?: number;
   offset?: number;
@@ -305,7 +382,7 @@ export const getCreditsHistory = async (params?: GetCreditsHistoryParams) => {
 };
 
 export const getDetailedHistory = async (params?: GetDetailedHistoryParams) => {
-  const { data } = await api.get<DetailedHistoryItem[]>("/historico/detalhado", {
+  const { data } = await api.get<unknown>("/historico/detalhado", {
     params,
   });
 
@@ -313,7 +390,9 @@ export const getDetailedHistory = async (params?: GetDetailedHistoryParams) => {
     return [] as DetailedHistoryItem[];
   }
 
-  return data;
+  return data
+    .map((entry) => normalizeDetailedHistoryItem(entry))
+    .filter((entry): entry is DetailedHistoryItem => entry !== null);
 };
 
 export const getReferralStats = async () => {

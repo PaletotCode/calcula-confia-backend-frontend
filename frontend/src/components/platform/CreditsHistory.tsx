@@ -3,9 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LucideIcon } from "@/components/LucideIcon";
-import { getCreditsHistory, type CreditHistoryItem } from "@/lib/api";
-
-import { parseHistoryMetadata } from "@/utils/history-metadata";
+import { getDetailedHistory, type DetailedHistoryItem } from "@/lib/api";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -14,12 +12,28 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatCredits(value: number) {
+function toNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value.replace(/,/g, "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatCredits(value: unknown) {
+  const numeric = toNumber(value);
+  if (numeric == null) {
+    return "--";
+  }
   const formatted = new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(value);
-  const suffix = Math.abs(value) === 1 ? "crédito" : "créditos";
+  }).format(numeric);
+  const suffix = Math.abs(numeric) === 1 ? "crédito" : "créditos";
   return `${formatted} ${suffix}`;
 }
 
@@ -48,18 +62,25 @@ function formatDate(value: string | undefined | null) {
   }).format(date);
 }
 
+function toTimestamp(value: string | null | undefined): number {
+  if (!value) return 0;
+  const d = new Date(value);
+  const t = d.getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
 export default function CreditsHistory() {
-  const historyQuery = useQuery<CreditHistoryItem[]>({
-    queryKey: ["credits", "history", "full"],
-    queryFn: () => getCreditsHistory(),
+  const historyQuery = useQuery<DetailedHistoryItem[]>({
+    queryKey: ["detailed-history", { limit: 100, offset: 0, scope: "credits" }],
+    queryFn: () => getDetailedHistory({ limit: 100, offset: 0 }),
   });
 
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
 
   const sortedHistory = useMemo(() => {
-    if (!historyQuery.data) return [] as CreditHistoryItem[];
+    if (!historyQuery.data) return [] as DetailedHistoryItem[];
     return [...historyQuery.data].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      (a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at)
     );
   }, [historyQuery.data]);
 
@@ -103,9 +124,9 @@ export default function CreditsHistory() {
             <div className="flex h-full flex-col gap-3 overflow-y-auto pr-1">
               {sortedHistory.map((item) => {
                 const isExpanded = expandedId === item.id;
-                const metadata = parseHistoryMetadata(item);
-                const estimatedValue = metadata.calculationValue ?? Math.max(item.amount, 0);
-                const creditsUsed = metadata.creditsUsed ?? Math.abs(item.amount);
+                const calculationValue = toNumber(item.calculated_value) ?? 0;
+                const creditsUsed = toNumber(item.credits_used);
+                const bills = Array.isArray(item.bills) ? item.bills : [];
                 return (
                   <button
                     key={item.id}
@@ -115,15 +136,17 @@ export default function CreditsHistory() {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900 md:text-base">{item.transaction_type}</p>
+                        <p className="text-sm font-semibold text-slate-900 md:text-base">Simulação #{item.id}</p>
                         <p className="text-xs text-slate-500 md:text-sm">{formatDateTime(item.created_at)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-base font-semibold text-emerald-600 md:text-lg">
-                          {formatCurrency(Math.max(0, estimatedValue))}
+                          {formatCurrency(Math.max(0, calculationValue))}
                         </p>
-                        <p className="text-xs text-slate-500">Créditos utilizados: {formatCredits(creditsUsed)}</p>
-                        <p className="text-xs text-slate-500">Saldo após: {formatCredits(item.balance_after)}</p>
+                        <p className="text-xs text-slate-500">
+                          Créditos utilizados: {creditsUsed != null ? formatCredits(creditsUsed) : "--"}
+                        </p>
+                        <p className="text-xs text-slate-500">Faturas: {bills.length}</p>
                       </div>
                     </div>
 
@@ -131,53 +154,44 @@ export default function CreditsHistory() {
                       <div className="overflow-hidden">
                         <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-slate-100">
                           <div className="flex flex-col gap-4">
-                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600">
-                                  <LucideIcon name="FileText" className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-wide text-slate-500">Descrição</p>
-                                  <p className="text-sm font-medium text-slate-800">{item.description || "--"}</p>
-                                </div>
-                              </div>
-                              <div className="grid gap-1 text-right text-xs text-slate-500">
+                            <div className="grid gap-1 text-right text-xs text-slate-500 md:text-sm">
+                              <span>
+                                <span className="font-semibold text-slate-700">Criado em:</span> {formatDateTime(item.created_at)}
+                              </span>
+                              {creditsUsed != null ? (
                                 <span>
-                                  <span className="font-semibold text-slate-700">Criado em:</span> {formatDateTime(item.created_at)}
+                                  <span className="font-semibold text-slate-700">Créditos consumidos:</span> {formatCredits(creditsUsed)}
                                 </span>
-                                <span>
-                                  <span className="font-semibold text-slate-700">Expira em:</span> {formatDate(item.expires_at)}
-                                </span>
-                              </div>
+                              ) : null}
                             </div>
-                            {metadata.bills.length > 0 ? (
+                            {bills.length > 0 ? (
                               <div className="space-y-2">
                                 <p className="text-xs uppercase tracking-wide text-slate-500">Faturas analisadas</p>
                                 <div className="grid gap-2">
-                                  {metadata.bills.map((bill, index) => (
-                                    <div
-                                      key={`${item.id}-bill-${index}`}
-                                      className="flex items-center justify-between rounded-xl bg-slate-50/80 px-3 py-2"
-                                    >
-                                      <span className="text-sm font-medium text-slate-700">
-                                        {bill.label || `Fatura ${index + 1}`}
-                                      </span>
-                                      {bill.value != null ? (
-                                        <span className="text-xs font-semibold text-slate-500">
-                                          {formatCurrency(bill.value)}
+                                  {bills.map((bill, index) => {
+                                    const formattedDate = formatDate(bill.issue_date);
+                                    const billValue = toNumber(bill.icms_value);
+                                    return (
+                                      <div
+                                        key={`${item.id}-bill-${index}`}
+                                        className="flex items-center justify-between rounded-xl bg-slate-50/80 px-3 py-2"
+                                      >
+                                        <span className="text-sm font-medium text-slate-700">
+                                          {formattedDate !== "--" ? formattedDate : `Fatura ${index + 1}`}
                                         </span>
-                                      ) : null}
-                                    </div>
-                                  ))}
+                                        <span className="text-xs font-semibold text-slate-500">
+                                          {billValue != null ? formatCurrency(billValue) : "--"}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
-                            ) : null}
-
-                            {metadata.notes ? (
-                              <div className="rounded-xl bg-indigo-50/70 p-3 text-xs text-indigo-700">
-                                {metadata.notes}
+                            ) : (
+                              <div className="rounded-xl bg-slate-50/80 p-3 text-xs text-slate-500">
+                                Nenhuma fatura disponível para esta simulação.
                               </div>
-                            ) : null}
+                            )}
                           </div>
                         </div>
                       </div>

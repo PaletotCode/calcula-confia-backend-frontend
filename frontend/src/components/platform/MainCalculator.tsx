@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   BottomHint,
@@ -152,6 +153,7 @@ const MainCalculator = ({
   onNavigateToHistory,
   isVisible = true,
 }: MainCalculatorProps) => {
+  const queryClient = useQueryClient();
   const [flowStep, setFlowStep] = useState<FlowStep>("welcome");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [formStateByBill, setFormStateByBill] = useState<Record<number, FormState>>({});
@@ -492,6 +494,10 @@ const MainCalculator = ({
             : null,
         );
 
+        void queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
+        void queryClient.invalidateQueries({ queryKey: ["credits", "history"] });
+        void queryClient.invalidateQueries({ queryKey: ["detailed-history"] });
+
         setIsRequesting(false);
         setLoadingIndex(TIMELINE_ITEMS.length - 1);
         pendingPayloadRef.current = null;
@@ -525,7 +531,7 @@ const MainCalculator = ({
     return () => {
       resetLoadingSideEffects();
     };
-  }, [flowStep, resetLoadingSideEffects]);
+  }, [flowStep, queryClient, resetLoadingSideEffects]);
 
   const handleRestart = useCallback(() => {
     resetLoadingSideEffects();
