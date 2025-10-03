@@ -108,6 +108,17 @@ class QueryHistoryResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class BillHistoryItem(BaseModel):
+    issue_date: str
+    icms_value: Decimal
+
+
+class DetailedHistoryResponse(BaseModel):
+    id: int
+    calculated_value: Decimal
+    created_at: datetime
+    bills: List[BillHistoryItem]
+
 
 # ===== Admin/Audit Schemas =====
 class AuditLogResponse(BaseModel):

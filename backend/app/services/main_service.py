@@ -522,6 +522,25 @@ class UserService:
 
 class CalculationService:
     """Serviço para processamento de cálculos com validação de créditos em tempo real"""
+
+    @staticmethod
+    async def get_user_history(
+        db: AsyncSession,
+        user: User,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[QueryHistory]:
+        """Retorna o histórico de cálculos de um usuário."""
+        stmt = (
+            select(QueryHistory)
+            .where(QueryHistory.user_id == user.id)
+            .order_by(desc(QueryHistory.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+
+        result = await db.execute(stmt)
+        return result.scalars().all()
     
     @staticmethod
     async def _get_valid_credits_balance(db: AsyncSession, user_id: int) -> int:
@@ -644,6 +663,13 @@ class CalculationService:
                         icms_value=Decimal(str(media_icms)),
                         months=len(provided_bills),
                         calculated_value=Decimal(str(resultado_final)),
+                        bills_data=[
+                            {
+                                "issue_date": bill.issue_date,
+                                "icms_value": str(bill.icms_value),
+                            }
+                            for bill in calculation_data.bills
+                        ],
                         calculation_time_ms=int((time.time() - start_time) * 1000),
                         ip_address=ip_address,
                         user_agent=user_agent

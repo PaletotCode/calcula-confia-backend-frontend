@@ -120,7 +120,7 @@ function PlatformContent() {
   );
 
   const waitingForSessionUnlock =
-    status === "AWAITING_PAYMENT" && !hasSuccessfulPayment;
+    status === "AWAITING_PAYMENT" && !hasSuccessfulPayment && sessionAllowsAccess;
 
   useEffect(() => {
     if (isLoading) {
@@ -175,7 +175,7 @@ function PlatformContent() {
     );
   }
 
-  if (!hasSuccessfulPayment) {
+  if (!hasSuccessfulPayment && !sessionAllowsAccess) {
     return accessDeniedScreen;
   }
 

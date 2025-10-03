@@ -7,6 +7,7 @@ import MainCalculator from "@/components/platform/MainCalculator";
 import HomePage from "@/components/platform/pages/HomePage";
 import HistoryPage from "@/components/platform/pages/HistoryPage";
 import CreditsPage from "@/components/platform/pages/CreditsPage";
+import type { SlidesNavigationState } from "@/components/platform/pages/slides-navigation";
 import useAuth from "@/hooks/useAuth";
 
 interface CalculatorProps {
@@ -14,10 +15,10 @@ interface CalculatorProps {
 }
 
 const navLinks: Array<{ id: string; label: string; icon: IconName; color: string }> = [
-  { id: "home", label: "Iní­cio", icon: "House", color: "#0d9488" },
+  { id: "home", label: "Início", icon: "House", color: "#0d9488" },
   { id: "calculate", label: "Calcular", icon: "Calculator", color: "#3b82f6" },
-  { id: "history", label: "HistÃ³rico", icon: "History", color: "#8b5cf6" },
-  { id: "credits", label: "CrÃ©ditos", icon: "Wallet", color: "#ca8a04" },
+  { id: "history", label: "Histórico", icon: "History", color: "#8b5cf6" },
+  { id: "credits", label: "Créditos", icon: "Wallet", color: "#ca8a04" },
 ];
 
 const CALCULATE_INDEX = navLinks.findIndex((link) => link.id === "calculate");
@@ -33,6 +34,12 @@ export function Calculator({ onRequestBuyCredits }: CalculatorProps) {
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const navIndicatorRef = useRef<HTMLDivElement>(null);
   const navLinkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const [slidesStateBySection, setSlidesStateBySection] = useState<Record<CalculatorSection, SlidesNavigationState | null>>({
+    home: null,
+    calculate: null,
+    history: null,
+    credits: null,
+  });
 
   const navigateToSection = useCallback((section: CalculatorSection) => {
     const index = navLinks.findIndex((link) => link.id === section);
@@ -97,7 +104,80 @@ export function Calculator({ onRequestBuyCredits }: CalculatorProps) {
     navigateToSection("credits");
   }, [navigateToSection]);
 
+  const handleNavigateToCalculator = useCallback(() => {
+    navigateToSection("calculate");
+  }, [navigateToSection]);
+
+  const handleSlideStateChange = useCallback(
+    (section: CalculatorSection, state: SlidesNavigationState | null) => {
+      setSlidesStateBySection((previous) => {
+        if (previous[section] === state) {
+          return previous;
+        }
+        return { ...previous, [section]: state };
+      });
+    },
+    [],
+  );
+
+  const handleHomeSlideStateChange = useCallback(
+    (state: SlidesNavigationState | null) => {
+      handleSlideStateChange("home", state);
+    },
+    [handleSlideStateChange],
+  );
+
+  const handleHistorySlideStateChange = useCallback(
+    (state: SlidesNavigationState | null) => {
+      handleSlideStateChange("history", state);
+    },
+    [handleSlideStateChange],
+  );
+
+  const handleCreditsSlideStateChange = useCallback(
+    (state: SlidesNavigationState | null) => {
+      handleSlideStateChange("credits", state);
+    },
+    [handleSlideStateChange],
+  );
+
+  const activeSectionId = navLinks[activeNavIndex]?.id as CalculatorSection | undefined;
+  const activeSlidesState = activeSectionId ? slidesStateBySection[activeSectionId] : null;
+
   const isCalculateVisible = activeNavIndex === CALCULATE_INDEX;
+
+  const totalSlides = activeSlidesState?.totalSlides ?? 0;
+  const canGoToPreviousSlide = Boolean(activeSlidesState?.canGoPrevious);
+  const canGoToNextSlide = Boolean(activeSlidesState?.canGoNext);
+  const hasSlideNavigation = Boolean(activeSlidesState && totalSlides > 1);
+  const disablePreviousButton = hasSlideNavigation
+    ? !canGoToPreviousSlide
+    : activeNavIndex === 0;
+  const disableNextButton = hasSlideNavigation
+    ? !canGoToNextSlide
+    : activeNavIndex === navLinks.length - 1;
+
+  const handleGoToPreviousSlide = useCallback(() => {
+    if (hasSlideNavigation) {
+      if (canGoToPreviousSlide) {
+        activeSlidesState?.goToPrevious();
+      }
+      return;
+    }
+
+    setActiveNavIndex((previous) => Math.max(previous - 1, 0));
+  }, [activeSlidesState, canGoToPreviousSlide, hasSlideNavigation]);
+
+  const handleGoToNextSlide = useCallback(() => {
+    if (hasSlideNavigation) {
+      if (canGoToNextSlide) {
+        activeSlidesState?.goToNext();
+      }
+      return;
+    }
+
+    setActiveNavIndex((previous) => Math.min(previous + 1, navLinks.length - 1));
+  }, [activeSlidesState, canGoToNextSlide, hasSlideNavigation]);
 
   return (
     <div className="calculator-root flex h-full min-h-screen w-full flex-col">
@@ -111,6 +191,8 @@ export function Calculator({ onRequestBuyCredits }: CalculatorProps) {
             <HomePage
               onNavigateToHistory={handleNavigateToHistory}
               onNavigateToCredits={handleNavigateToCredits}
+              onNavigateToCalculator={handleNavigateToCalculator}
+              onSlideStateChange={handleHomeSlideStateChange}
             />
           </section>
           <section id="calculate" className="page calculate-page overflow-hidden">
@@ -121,10 +203,13 @@ export function Calculator({ onRequestBuyCredits }: CalculatorProps) {
             />
           </section>
           <section id="history" className="page">
-            <HistoryPage />
+            <HistoryPage onSlideStateChange={handleHistorySlideStateChange} />
           </section>
           <section id="credits" className="page">
-            <CreditsPage onRequestBuyCredits={onRequestBuyCredits} />
+            <CreditsPage
+              onRequestBuyCredits={onRequestBuyCredits}
+              onSlideStateChange={handleCreditsSlideStateChange}
+            />
           </section>
         </div>
       </main>
@@ -158,8 +243,28 @@ export function Calculator({ onRequestBuyCredits }: CalculatorProps) {
                     <span className="text-xs font-medium">{link.label}</span>
                   </div>
                 </a>
-              );
+              );             
             })}
+            <div className="flex flex-col gap-1 pl-1">
+              <button
+                type="button"
+                className="nav-link flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={handleGoToPreviousSlide}
+                aria-label="Slide anterior"
+                disabled={disablePreviousButton}
+              >
+                <LucideIcon name="ChevronUp" className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className="nav-link flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={handleGoToNextSlide}
+                aria-label="Próximo slide"
+                disabled={disableNextButton}
+              >
+                <LucideIcon name="ChevronDown" className="h-4 w-4" />
+              </button>
+            </div>
             <div className="hidden h-8 w-px bg-slate-700/60 sm:block" />
             <button
               type="button"

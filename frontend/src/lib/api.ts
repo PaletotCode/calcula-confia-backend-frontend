@@ -190,6 +190,26 @@ export interface CreditHistoryCollectionResponse {
 
 export type CreditHistoryResponse = CreditHistoryItem[] | CreditHistoryCollectionResponse;
 
+export interface DetailedHistoryBill {
+  issue_date?: string | null;
+  icms_value?: number | null;
+  [key: string]: unknown;
+}
+
+export interface DetailedHistoryItem {
+  id: string | number;
+  calculated_value?: number | null;
+  created_at?: string | null;
+  credits_used?: number | null;
+  bills?: DetailedHistoryBill[];
+  [key: string]: unknown;
+}
+
+export interface GetDetailedHistoryParams {
+  limit?: number;
+  offset?: number;
+}
+
 export interface GetCreditsHistoryParams {
   limit?: number;
 }
@@ -282,6 +302,18 @@ export const getCreditsHistory = async (params?: GetCreditsHistoryParams) => {
     [];
 
   return collection as CreditHistoryItem[];
+};
+
+export const getDetailedHistory = async (params?: GetDetailedHistoryParams) => {
+  const { data } = await api.get<DetailedHistoryItem[]>("/historico/detalhado", {
+    params,
+  });
+
+  if (!Array.isArray(data)) {
+    return [] as DetailedHistoryItem[];
+  }
+
+  return data;
 };
 
 export const getReferralStats = async () => {

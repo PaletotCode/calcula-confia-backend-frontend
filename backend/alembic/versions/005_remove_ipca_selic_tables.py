@@ -1,9 +1,7 @@
 """Remove tabelas de taxas IPCA e SELIC"""
-
-from typing import Sequence, Union
-
 from alembic import op
 import sqlalchemy as sa
+from typing import Sequence, Union
 
 
 # revision identifiers, used by Alembic.
@@ -17,8 +15,15 @@ def upgrade() -> None:
     op.execute("DROP TABLE IF EXISTS ipca_rates CASCADE")
     op.execute("DROP TABLE IF EXISTS selic_rates CASCADE")
 
+    op.add_column(
+        "query_histories",
+        sa.Column("bills_data", sa.JSON(), nullable=True)
+    )
+
 
 def downgrade() -> None:
+    op.drop_column("query_histories", "bills_data")
+    
     op.create_table(
         "selic_rates",
         sa.Column("id", sa.Integer(), nullable=False),

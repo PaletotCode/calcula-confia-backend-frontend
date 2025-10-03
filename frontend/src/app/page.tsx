@@ -109,52 +109,52 @@ const pricingDetails: Array<{
 
 const testimonials = [
   {
-    name: "Carlos Silva",
-    location: "São Paulo, SP",
-    initials: "CS",
+    name: "André Rocha",
+    location: "Rondonópolis, MT",
+    initials: "AR",
     color: "bg-slate-200 text-slate-600",
     text:
-      '"Fiquei <span class="keyword-highlight">chocado com o valor</span> que tinha a receber. O processo foi <span class="keyword-highlight">ridiculamente fácil</span>. Paguei os 5 reais e <span class="keyword-highlight">valeu cada centavo</span>."',
+      '"Eu não fazia ideia de que podia ter dinheiro a receber. Em segundos tive uma <span class="keyword-highlight">estimativa clara</span>, sem complicação."',
   },
   {
-    name: "Juliana Martins",
-    location: "Belo Horizonte, MG",
-    initials: "JM",
+    name: "Fernanda Melo",
+    location: "Rondonópolis, MT",
+    initials: "FM",
     color: "bg-green-200 text-green-700",
     text:
-      '"Sempre achei que isso era <span class="keyword-highlight">complicado demais</span>. A plataforma me deu o <span class="keyword-highlight">número exato em minutos</span>. <span class="keyword-highlight">Recomendo para todo mundo!</span>"',
+      '"Foi <span class="keyword-highlight">muito rápido</span>. Coloquei os dados da conta e já apareceu o valor aproximado. Pelo preço simbólico, <span class="keyword-highlight">valeu demais</span>."',
   },
   {
-    name: "Ricardo Mendes",
-    location: "Rio de Janeiro, RJ",
-    initials: "RM",
+    name: "Gabriel Torres",
+    location: "Rondonópolis, MT",
+    initials: "GT",
     color: "bg-slate-200 text-slate-600",
     text:
-      '"Usei para mim e para minha mãe. A <span class="keyword-highlight">clareza da informação</span> é o que mais impressiona. <span class="keyword-highlight">Sem enrolação, direto ao ponto.</span>"',
+      '"Gostei da <span class="keyword-highlight">transparência</span>. Não promete milagre, mas mostra de forma simples quanto posso recuperar."',
   },
   {
-    name: "Ana Pereira",
-    location: "Salvador, BA",
-    initials: "AP",
+    name: "Marina Souza",
+    location: "Cuiabá, MT",
+    initials: "MS",
     color: "bg-green-200 text-green-700",
     text:
-      '"Uma <span class="keyword-highlight">ferramenta essencial!</span> O valor que paguei foi <span class="keyword-highlight">simbólico</span> perto da <span class="keyword-highlight">informação valiosa</span> que recebi. Já indiquei pra família toda."',
+      '"Paguei os R$5 e tive a resposta <span class="keyword-highlight">na hora</span>. Achei bem acessível e <span class="keyword-highlight">objetivo</span>, sem enrolação."',
   },
   {
-    name: "Lucas Costa",
-    location: "Curitiba, PR",
+    name: "Paulo Vieira",
+    location: "Sinop, MT",
+    initials: "PV",
+    color: "bg-slate-200 text-slate-600",
+    text:
+      '"Estava desconfiado, mas a análise foi <span class="keyword-highlight">rápida e segura</span>. Já indiquei para dois amigos."',
+  },
+  {
+    name: "Letícia Carvalho",
+    location: "Várzea Grande, MT",
     initials: "LC",
-    color: "bg-slate-200 text-slate-600",
-    text:
-      '"<span class="keyword-highlight">Totalmente seguro e confiável.</span> Tinha receio, mas a plataforma é super profissional. O <span class="keyword-highlight">resultado sai na hora</span>, impressionante."',
-  },
-  {
-    name: "Sofia Almeida",
-    location: "Fortaleza, CE",
-    initials: "SA",
     color: "bg-green-200 text-green-700",
     text:
-      '"Finalmente uma <span class="keyword-highlight">forma clara de entender</span> esse direito. <span class="keyword-highlight">Valeu muito a pena</span> o pequeno investimento para ter essa estimativa em mãos."',
+      '"Um serviço que realmente entrega o que promete: <span class="keyword-highlight">clareza e agilidade</span>. Valeu muito a pena."',
   },
 ];
 
@@ -885,10 +885,10 @@ export default function LandingPage() {
                 Baseado na Decisão do STF - 2025 (Tema 69)
               </span>
               <h1 className="mb-4 text-4xl font-black leading-tight drop-shadow-xl sm:text-5xl md:text-6xl">
-                É seu direito! Veja agora o quanto você poderá receber.
+                <span className="glow-green">R$5 que revelam</span> se você tem <span className="glow-gradient">centenas a receber</span>.
               </h1>
               <p className="mx-auto mb-8 max-w-3xl text-lg text-slate-200 drop-shadow-lg md:text-xl">
-                Nossa calculadora analisa seu caso e revela sua estimativa em segundos. É simples, rápido e seguro.
+                Descubra em segundos se tem dinheiro a recuperar, com total clareza e segurança.
               </p>
               <a
                 href="#preco"

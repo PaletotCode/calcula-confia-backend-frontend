@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from typing import List, Optional
 
 from ..services import payment_service
@@ -33,6 +34,8 @@ from ..models_schemas.schemas import (
     CalculationRequest,
     CalculationResponse,
     QueryHistoryResponse,
+    DetailedHistoryResponse,
+    BillHistoryItem,
     AuditLogResponse,
     CreditTransactionResponse,
     DashboardStats,
@@ -386,6 +389,72 @@ async def historico(
             )
             for item in history
         ]
+    
+@router.get("/historico/detalhado", response_model=List[DetailedHistoryResponse])
+@cache(expire=300)
+async def historico_detalhado(
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retorna o histórico detalhado com as faturas enviadas em cada cálculo."""
+    with LogContext(
+        endpoint="historico_detalhado",
+        user_id=current_user.id,
+        limit=limit,
+        offset=offset
+    ):
+        logger.info("Detailed history request received")
+
+        if limit > 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Limit cannot exceed 200"
+            )
+
+        history = await CalculationService.get_user_history(
+            db, current_user, limit, offset
+        )
+
+        detailed_history: List[DetailedHistoryResponse] = []
+
+        for item in history:
+            bills_payload: List[BillHistoryItem] = []
+            for bill in item.bills_data or []:
+                issue_date = bill.get("issue_date") if isinstance(bill, dict) else None
+                value = bill.get("icms_value") if isinstance(bill, dict) else None
+
+                if issue_date is None or value is None:
+                    continue
+
+                try:
+                    icms_decimal = Decimal(str(value))
+                except (ArithmeticError, ValueError):
+                    logger.warning(
+                        "Invalid bill value found in history",
+                        calculation_id=item.id,
+                        raw_value=value
+                    )
+                    continue
+
+                bills_payload.append(
+                    BillHistoryItem(
+                        issue_date=str(issue_date),
+                        icms_value=icms_decimal
+                    )
+                )
+
+            detailed_history.append(
+                DetailedHistoryResponse(
+                    id=item.id,
+                    calculated_value=item.calculated_value,
+                    created_at=item.created_at,
+                    bills=bills_payload
+                )
+            )
+
+        return detailed_history
 
 
 @router.get("/me", response_model=UserResponse)

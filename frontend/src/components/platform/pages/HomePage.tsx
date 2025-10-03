@@ -14,10 +14,14 @@ import {
 } from "@/lib/api";
 import { parseHistoryMetadata } from "@/utils/history-metadata";
 import FullscreenSlides, { type Slide } from "./FullscreenSlides";
+import type { SlidesNavigationStateChange } from "./slides-navigation";
+import { mobileSlideCardBase, mobileSlideSectionSpacing } from "../mobile";
 
 interface HomePageProps {
   onNavigateToHistory?: () => void;
   onNavigateToCredits?: () => void;
+  onNavigateToCalculator?: () => void;
+  onSlideStateChange?: SlidesNavigationStateChange;
 }
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -47,7 +51,13 @@ function formatDate(value: string | undefined) {
   }).format(date);
 }
 
-export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: HomePageProps) {
+export default function HomePage({
+  onNavigateToHistory,
+  onNavigateToCredits,
+  onNavigateToCalculator,
+  onSlideStateChange,
+}: HomePageProps) {
+  const baseSlideContainer = mobileSlideCardBase;
   const balanceQuery = useQuery<CreditsBalanceResponse>({
     queryKey: ["credits", "balance", "home"],
     queryFn: getCreditsBalance,
@@ -89,20 +99,20 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
         id: "home-hero",
         ariaLabel: "Apresentação da plataforma",
         content: (
-          <div className="w-full max-w-2xl space-y-6">
-            <div className="space-y-4">
+          <div className={clsx(baseSlideContainer, "text-center")}>
+            <div className={clsx(mobileSlideSectionSpacing, "md:space-y-4")}>
               <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-teal-700">
                 <LucideIcon name="Sparkles" className="h-4 w-4" />
                 Plataforma CalculaConfia
               </span>
-              <h1 className="text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+              <h1 className="text-2xl font-bold leading-tight text-slate-900 md:text-4xl">
                 Simule, acompanhe e compre créditos em um só fluxo
               </h1>
               <p className="text-sm text-slate-600 md:text-base">
-                Navegue pelos conteúdos deslizando para cima e para baixo. Quando estiver pronto, avance para a aba de cálculo para iniciar uma nova simulação.
+                Explore os destaques abaixo ou pule direto para a área de cálculo quando quiser começar uma nova simulação.
               </p>
             </div>
-            <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-3">
+            <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-3 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={onNavigateToHistory}
@@ -110,8 +120,18 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
               >
                 Explorar histórico
               </button>
-              <p className="text-xs text-slate-500">Arraste para cima ou use os botões para conhecer os destaques.</p>
+              <button
+                type="button"
+                onClick={onNavigateToCalculator}
+                disabled={!onNavigateToCalculator}
+                className="w-full rounded-full bg-white/80 px-6 py-3 text-sm font-semibold text-teal-700 shadow-lg ring-1 ring-teal-200 transition hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Ir para a calculadora
+              </button>
             </div>
+            <p className="text-center text-xs text-slate-500">
+              Arraste para cima ou use os atalhos para navegar rapidamente pela plataforma.
+            </p>
           </div>
         ),
       },
@@ -119,18 +139,20 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
         id: "home-kpis",
         ariaLabel: "Indicadores de desempenho",
         content: (
-          <div className="w-full max-w-3xl space-y-6">
-            <header className="space-y-2">
-              <h2 className="text-2xl font-semibold text-slate-900">Indicadores rápidos</h2>
-              <p className="text-sm text-slate-600">Tenha visibilidade imediata do que mudou desde seu último acesso.</p>
+          <div className={clsx(baseSlideContainer, "text-left")}>
+            <header className={clsx(mobileSlideSectionSpacing, "text-center md:text-left")}>
+              <h2 className="text-2xl font-bold text-slate-900 md:text-4xl">Indicadores rápidos</h2>
+              <p className="text-sm text-slate-600 md:text-base">
+                Tenha visibilidade imediata do que mudou desde seu último acesso.
+              </p>
             </header>
-            <div className="grid w-full gap-4 sm:grid-cols-3">
-              <div className="flex h-full flex-col items-center justify-between gap-4 rounded-3xl bg-white/80 p-6 text-left shadow-lg ring-1 ring-slate-200">
-                <div className="flex w-full items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-teal-600">Saldo atual</span>
+            <div className="grid w-full gap-3 md:gap-4 md:grid-cols-3">
+              <div className="flex h-full flex-col justify-between gap-3 rounded-3xl bg-white/90 p-5 shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-600">Saldo atual</span>
                   <LucideIcon name="Wallet" className="h-6 w-6 text-teal-500" />
                 </div>
-                <p className="w-full text-2xl font-bold text-slate-900">
+                <p className="text-2xl font-semibold text-slate-900 md:text-3xl">
                   {balanceQuery.isLoading ? "--" : formatCredits(totalCredits)}
                 </p>
                 <button
@@ -141,23 +163,23 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
                   Ver detalhes
                 </button>
               </div>
-              <div className="flex h-full flex-col items-center justify-between gap-4 rounded-3xl bg-white/80 p-6 text-left shadow-lg ring-1 ring-slate-200">
-                <div className="flex w-full items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-purple-600">Indicações</span>
+              <div className="flex h-full flex-col justify-between gap-3 rounded-3xl bg-white/90 p-5 shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-600">Indicações</span>
                   <LucideIcon name="Users" className="h-6 w-6 text-purple-500" />
                 </div>
-                <p className="w-full text-2xl font-bold text-slate-900">
-                  {referralQuery.isLoading ? "--" : numberFormatter.format(referralTotal)}
+                <p className="text-2xl font-semibold text-slate-900 md:text-3xl">
+                {referralQuery.isLoading ? "--" : numberFormatter.format(referralTotal)}
                 </p>
-                <p className="w-full text-xs text-slate-500">Créditos ganhos: {formatCredits(referralEarned)}</p>
+                <p className="text-xs text-slate-500">Créditos ganhos: {formatCredits(referralEarned)}</p>
               </div>
-              <div className="flex h-full flex-col items-center justify-between gap-4 rounded-3xl bg-white/80 p-6 text-left shadow-lg ring-1 ring-slate-200">
-                <div className="flex w-full items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Última simulação</span>
+              <div className="hidden h-full flex-col justify-between gap-3 rounded-3xl bg-white/90 p-5 shadow-sm ring-1 ring-slate-200 md:flex">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-600">Última simulação</span>
                   <LucideIcon name="Activity" className="h-6 w-6 text-indigo-500" />
                 </div>
-                <div className="w-full text-left">
-                  <p className="text-base font-semibold text-slate-800">
+                <div>
+                  <p className="text-3xl font-semibold text-slate-900">
                     {historyQuery.isLoading
                       ? "Carregando..."
                       : lastSimulation
@@ -182,14 +204,14 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
         id: "home-faq",
         ariaLabel: "Dúvidas frequentes",
         content: (
-          <div className="w-full max-w-2xl space-y-5">
-            <header className="space-y-2">
-              <h2 className="text-2xl font-semibold text-slate-900">Dicas para aproveitar melhor</h2>
-              <p className="text-sm text-slate-600">
+          <div className={clsx(baseSlideContainer, "space-y-6 text-left")}>
+            <header className={clsx(mobileSlideSectionSpacing, "text-center md:text-left")}>
+              <h2 className="text-2xl font-bold text-slate-900 md:text-4xl">Dicas para aproveitar melhor</h2>
+              <p className="text-sm text-slate-600 md:text-base">
                 Use os atalhos abaixo para navegar sem perder tempo.
               </p>
             </header>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-4">
               {[
                 {
                   id: "workflow",
@@ -212,7 +234,7 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
               ].map((item) => {
                 const isOpen = openFaq === item.id;
                 return (
-                  <div key={item.id} className="rounded-2xl bg-white/80 shadow-lg ring-1 ring-slate-200">
+                  <div key={item.id} className="rounded-2xl bg-white/90 shadow-sm ring-1 ring-slate-200">
                     <button
                       type="button"
                       className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
@@ -244,5 +266,10 @@ export default function HomePage({ onNavigateToHistory, onNavigateToCredits }: H
       },
     ];
 
-  return <FullscreenSlides slides={slides} />;
+  return (
+    <FullscreenSlides
+      slides={slides}
+      onSlideStateChange={onSlideStateChange}
+    />
+  );
 }

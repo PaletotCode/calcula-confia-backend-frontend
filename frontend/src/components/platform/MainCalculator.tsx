@@ -5,7 +5,6 @@ import clsx from "clsx";
 import {
   BottomHint,
   BillFormViewModel,
-  BillOptionCard,
   ConfirmationStep,
   ErrorOverlay,
   FormStep,
@@ -68,17 +67,52 @@ const DEFAULT_FORM_STATE: FormState = {
 };
 
 const formatCurrencyInput = (rawValue: string) => {
-  const cleaned = rawValue.replace(/[^0-9,]/g, '').replace(/,+/g, ',');
-  if (!cleaned) {
+  const trimmed = rawValue.replace(/\s/g, '');
+  if (!trimmed) {
     return '';
   }
 
-  const parts = cleaned.split(',');
-  const integerPart = parts[0]?.replace(/^0+(?!$)/, '') || '0';
-  const decimalPart = (parts[1] ?? '').slice(0, 2);
-  const integerWithThousands = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const endsWithSeparator = /[.,]$/.test(trimmed);
+  const hasComma = trimmed.includes(',');
+  let decimalIndex = -1;
 
-  return decimalPart ? `${integerWithThousands},${decimalPart}` : integerWithThousands;
+  if (hasComma) {
+    decimalIndex = trimmed.lastIndexOf(',');
+  } else {
+    const lastDotIndex = trimmed.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+      const digitsAfterDot = trimmed.slice(lastDotIndex + 1).replace(/[^0-9]/g, '');
+      if (digitsAfterDot.length === 0 && endsWithSeparator) {
+        decimalIndex = lastDotIndex;
+      } else if (digitsAfterDot.length > 0 && digitsAfterDot.length <= 2) {
+        decimalIndex = lastDotIndex;
+      }
+    }
+  }
+
+  let integerRaw = decimalIndex === -1 ? trimmed : trimmed.slice(0, decimalIndex);
+  let decimalRaw = decimalIndex === -1 ? '' : trimmed.slice(decimalIndex + 1);
+
+  integerRaw = integerRaw.replace(/[^0-9]/g, '');
+  decimalRaw = decimalRaw.replace(/[^0-9]/g, '');
+
+  if (!integerRaw && !decimalRaw) {
+    return endsWithSeparator ? '0,' : '';
+  }
+
+  const sanitizedInteger = integerRaw.replace(/^0+(?!$)/, '') || '0';
+  const integerWithThousands = sanitizedInteger.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  if (decimalIndex === -1) {
+    return endsWithSeparator ? `${integerWithThousands},` : integerWithThousands;
+  }
+
+  const trimmedDecimals = decimalRaw.slice(0, 2);
+  if (!trimmedDecimals && endsWithSeparator) {
+    return `${integerWithThousands},`;
+  }
+
+  return trimmedDecimals ? `${integerWithThousands},${trimmedDecimals}` : `${integerWithThousands},`;
 };
 
 const formatBRL = (value: number) =>
@@ -105,6 +139,14 @@ const parseCurrency = (value: string) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const DATE_LIMITS = (() => {
+  const maxDate = new Date();
+  maxDate.setHours(0, 0, 0, 0);
+  const minDate = new Date(maxDate);
+  minDate.setFullYear(minDate.getFullYear() - 10);
+  return { minDate, maxDate };
+})();
+
 const MainCalculator = ({
   onRequestBuyCredits,
   onNavigateToHistory,
@@ -115,8 +157,6 @@ const MainCalculator = ({
   const [formStateByBill, setFormStateByBill] = useState<Record<number, FormState>>({});
   const [currentFormIndex, setCurrentFormIndex] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
-  const [showRecommendation, setShowRecommendation] = useState(false);
-  const [allowLowSelection, setAllowLowSelection] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
   const [isRequesting, setIsRequesting] = useState(false);
   const [resultAmount, setResultAmount] = useState<string>(formatBRL(0));
@@ -129,19 +169,6 @@ const MainCalculator = ({
   const controllerRef = useRef<AbortController | null>(null);
   const timelineIntervalRef = useRef<number | null>(null);
   const autoTransitionTimeoutRef = useRef<number | null>(null);
-
-  const billOptions: BillOptionCard[] = useMemo(
-    () =>
-      Array.from({ length: BILL_TOTAL }, (_, index) => {
-        const id = index + 1;
-        return {
-          id,
-          label: `Fatura ${String(id).padStart(2, "0")}`,
-          selected: selectedIds.includes(id),
-        };
-      }),
-    [selectedIds],
-  );
 
   const orderedFormStates: FormState[] = useMemo(
     () => selectedIds.map((id) => formStateByBill[id] ?? { ...DEFAULT_FORM_STATE }),
@@ -166,30 +193,10 @@ const MainCalculator = ({
 
   const handleStart = useCallback(() => {
     setOverlay(null);
-    setShowRecommendation(false);
-    setAllowLowSelection(false);
     setFlowStep("selection");
   }, []);
 
-  const handleToggleBill = useCallback((id: number) => {
-    setSelectedIds((prev) => {
-      const isSelected = prev.includes(id);
-      if (isSelected) {
-        return prev.filter((value) => value !== id);
-      }
-      return [...prev, id].sort((a, b) => a - b);
-    });
-  }, []);
 
-  const handleBackToWelcome = useCallback(() => {
-    setFlowStep("welcome");
-  }, []);
-
-  const handleAcceptRecommendation = useCallback(() => {
-    setSelectedIds([1, 2, 3]);
-    setShowRecommendation(false);
-    setAllowLowSelection(true);
-  }, []);
 
   const prepareFormStates = useCallback((ids: number[]) => {
     setFormStateByBill((previous) => {
@@ -221,55 +228,78 @@ const MainCalculator = ({
     [prepareFormStates],
   );
 
-  const handleDismissRecommendation = useCallback(() => {
-    setAllowLowSelection(true);
-    setShowRecommendation(false);
-    proceedToForms(selectedIds);
-  }, [proceedToForms, selectedIds]);
+  const handleContinueSelection = useCallback(
+    (quantity: number) => {
+      const clampedQuantity = Math.max(0, Math.min(quantity, BILL_TOTAL));
 
-  const handleContinueSelection = useCallback(() => {
-    if (selectedIds.length === 0) {
-      setOverlay({
-        title: "Selecione faturas",
-        messages: ["Escolha pelo menos uma fatura para continuar."],
-        retryStep: "selection",
-      });
-      return;
-    }
+      if (clampedQuantity <= 0) {
+        setOverlay({
+          title: "Selecione faturas",
+          messages: ["Escolha pelo menos uma fatura para continuar."],
+          retryStep: "selection",
+        });
+        return;
+      }
 
-    if (selectedIds.length < 3 && !allowLowSelection) {
-      setShowRecommendation(true);
-      return;
-    }
-
-    setShowRecommendation(false);
-    proceedToForms(selectedIds);
-  }, [allowLowSelection, proceedToForms, selectedIds]);
+      const ids = Array.from({ length: clampedQuantity }, (_, index) => index + 1);
+      setSelectedIds(ids);
+      proceedToForms(ids);
+    },
+    [proceedToForms],
+  );
 
   const handleDateChange = useCallback(
     (dates: Date[]) => {
       if (!currentFormId) {
         return;
       }
+
       const date = dates[0];
+      if (!date) {
+        setFormStateByBill((prev) => ({
+          ...prev,
+          [currentFormId]: {
+            ...(prev[currentFormId] ?? { ...DEFAULT_FORM_STATE }),
+            issueDateIso: "",
+            issueDateValue: "",
+            issueDateLabel: "",
+          },
+        }));
+        setFormError(null);
+        return;
+      }
+
+      const normalizedDate = new Date(date);
+      normalizedDate.setHours(0, 0, 0, 0);
+      const { minDate, maxDate } = DATE_LIMITS;
+      if (normalizedDate < minDate || normalizedDate > maxDate) {
+        setFormStateByBill((prev) => ({
+          ...prev,
+          [currentFormId]: {
+            ...(prev[currentFormId] ?? { ...DEFAULT_FORM_STATE }),
+            issueDateIso: "",
+            issueDateValue: "",
+            issueDateLabel: "",
+          },
+        }));
+        const minLabel = minDate.toLocaleDateString('pt-BR');
+        const maxLabel = maxDate.toLocaleDateString('pt-BR');
+        setFormError(`Informe uma data entre ${minLabel} e ${maxLabel}.`);
+        return;
+      }
+
+      setFormError(null);
       setFormStateByBill((prev) => ({
         ...prev,
-        [currentFormId]: date
-          ? {
-              ...(prev[currentFormId] ?? { ...DEFAULT_FORM_STATE }),
-              issueDateIso: toMonthIso(date),
-              issueDateValue: toInputValue(date),
-              issueDateLabel: toFriendlyLabel(date),
-            }
-          : {
-              ...(prev[currentFormId] ?? { ...DEFAULT_FORM_STATE }),
-              issueDateIso: "",
-              issueDateValue: "",
-              issueDateLabel: "",
-            },
+        [currentFormId]: {
+          ...(prev[currentFormId] ?? { ...DEFAULT_FORM_STATE }),
+          issueDateIso: toMonthIso(normalizedDate),
+          issueDateValue: toInputValue(normalizedDate),
+          issueDateLabel: toFriendlyLabel(normalizedDate),
+        },
       }));
     },
-    [currentFormId],
+    [currentFormId, setFormError],
   );
 
   const handleIcmsChange = useCallback(
@@ -504,8 +534,6 @@ const MainCalculator = ({
     setCurrentFormIndex(0);
     setFormError(null);
     setOverlay(null);
-    setShowRecommendation(false);
-    setAllowLowSelection(false);
     setLoadingIndex(0);
     setIsRequesting(false);
     setResultAmount(formatBRL(0));
@@ -554,14 +582,7 @@ const MainCalculator = ({
 
         <SelectionStep
           isActive={flowStep === "selection"}
-          bills={billOptions}
-          onToggleBill={handleToggleBill}
-          onBack={handleBackToWelcome}
           onContinue={handleContinueSelection}
-          showRecommendation={showRecommendation}
-          onAcceptRecommendation={handleAcceptRecommendation}
-          onDismissRecommendation={handleDismissRecommendation}
-          disableContinue={selectedIds.length === 0}
         />
 
         {selectedIds.map((id, index) => (

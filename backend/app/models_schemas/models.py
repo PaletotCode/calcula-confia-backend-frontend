@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Numeric, Text,
-    ForeignKey, Enum
+    ForeignKey, Enum, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -72,6 +72,7 @@ class QueryHistory(Base):
     icms_value = Column(Numeric(12, 2), nullable=False)
     months = Column(Integer, nullable=False)
     calculated_value = Column(Numeric(12, 2), nullable=False)
+    bills_data = Column(JSON, nullable=True)
     calculation_time_ms = Column(Integer, nullable=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
