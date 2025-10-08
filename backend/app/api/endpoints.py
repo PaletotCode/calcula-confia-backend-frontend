@@ -350,11 +350,6 @@ async def calcular(
 
 
 @router.get("/historico", response_model=List[QueryHistoryResponse])
-@cache(
-    expire=300,
-    namespace="user-history",
-    key_builder=user_scoped_cache_key_builder,
-)
 async def historico(
     limit: int = 50,
     offset: int = 0,
@@ -394,13 +389,8 @@ async def historico(
             )
             for item in history
         ]
-    
+
 @router.get("/historico/detalhado", response_model=List[DetailedHistoryResponse])
-@cache(
-    expire=300,
-    namespace="user-history-detailed",
-    key_builder=user_scoped_cache_key_builder,
-)
 async def historico_detalhado(
     limit: int = 50,
     offset: int = 0,
