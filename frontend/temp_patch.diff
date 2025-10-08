@@ -1,0 +1,12 @@
+*** Begin Patch
+*** Update File: src/app/page.tsx
+@@
+-import { useEffect, useMemo, useRef, useState } from "react";
++import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+@@
+-import { Swiper, SwiperSlide } from "swiper/react";
+-import { Autoplay, EffectFade, Pagination } from "swiper/modules";
++import { Swiper, SwiperSlide } from "swiper/react";
++import { Autoplay, EffectFade, Pagination } from "swiper/modules";
++import type { Swiper as SwiperClass } from "swiper";
+*** End Patch

@@ -117,7 +117,17 @@
 
         /* --- ESTILOS DO MODAL DE AUTENTICAÇÃO (refatorado) --- */
         /* Tamanho mais flexível e com conteúdo interno rolável quando necessário */
-        #auth-card { max-height: calc(100vh - 2rem); overflow: hidden; -webkit-overflow-scrolling: touch; }
+        #auth-card { max-height: calc(100vh - 2rem); overflow: hidden; -webkit-overflow-scrolling: touch; transition: transform .24s cubic-bezier(.22,1,.36,1), opacity .2s ease; }
+        .auth-card { will-change: transform, opacity; }
+        .auth-card--hidden { opacity: 0; transform: translateY(14px) scale(0.97); }
+        .auth-card--entered { opacity: 1; transform: translateY(0) scale(1); }
+        .auth-card--switching { animation: authCardSwitch 220ms ease; }
+        .auth-modal-overlay { opacity: 0; transition: opacity .2s ease; }
+        .auth-modal-overlay--visible { opacity: 1; }
+        .auth-modal-overlay--hidden { opacity: 0; }
+        .auth-view--switching { animation: authViewSwitch 200ms ease; }
+        @keyframes authCardSwitch { 0% { transform: translateY(0) scale(0.96); } 60% { transform: translateY(0) scale(1.02); } 100% { transform: translateY(0) scale(1); } }
+        @keyframes authViewSwitch { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: translateY(0); } }
         .auth-view { min-height: 460px; display: flex; flex-direction: column; }
         .auth-view form { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
         .auth-view form > .space-y-4 { flex: 1 1 auto; overflow: auto; min-height: 0; padding-right: 2px; }
@@ -242,7 +252,6 @@
         /* Performance: avoid work for offscreen content */
         .cv-auto { content-visibility: auto; contain-intrinsic-size: 1px 1000px; }
         /* --- Auth refinements & wizard --- */
-        #auth-card { transition: transform .18s ease; }
         .animate-switch #auth-card { transform: scale(0.99); }
         .pw-check { display:flex; align-items:center; gap:.5rem; color:#475569; font-size:.9rem; }
         .pw-check i { width:18px; height:18px; }
@@ -316,5 +325,16 @@ input[type=number] {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+
+/* Adicione isto após os outros estilos da hero-carousel */
+.hero-carousel {
+  height: 100dvh;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .hero-carousel {
+    height: -webkit-fill-available;
+  }
 }
 

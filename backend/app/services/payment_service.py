@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.logging_config import get_logger
+from ..core.cache_utils import resolve_user_namespace
 from ..models_schemas.models import User
 from .credit_service import CreditService
 from .payment_state_service import PaymentStateService
@@ -235,7 +236,8 @@ async def process_payment_and_award(
         )
 
         try:
-            await FastAPICache.clear(namespace="user_me")
+            await FastAPICache.clear(namespace=resolve_user_namespace("user-me", user_id))
+            await FastAPICache.clear(namespace=resolve_user_namespace("user_me", user_id))
         except Exception as exc:  # pragma: no cover - evita falha caso cache não esteja inicializado
             logger.warning(
                 "Falha ao limpar cache após detectar pagamento já processado.",
@@ -273,7 +275,8 @@ async def process_payment_and_award(
     )
 
     try:
-        await FastAPICache.clear(namespace="user_me")
+        await FastAPICache.clear(namespace=resolve_user_namespace("user-me", user_id))
+        await FastAPICache.clear(namespace=resolve_user_namespace("user_me", user_id))
     except Exception as exc:  # pragma: no cover - evita derrubar fluxo em caso de indisponibilidade do cache
         logger.warning(
             "Falha ao limpar cache após adicionar créditos.",

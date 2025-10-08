@@ -13,6 +13,7 @@ from fastapi import HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc
 from sqlalchemy.exc import IntegrityError
+from fastapi_cache import FastAPICache
 
 from ..core.security import get_password_hash, verify_password
 from passlib.exc import PasswordValueError
@@ -29,6 +30,7 @@ from ..models_schemas.schemas import (
 )
 
 from .calculation_engine import compute_total_refund
+from ..core.cache_utils import resolve_user_namespace
 
 logger = get_logger(__name__)
 
@@ -629,14 +631,29 @@ class CalculationService:
 
                 # Transação atômica para registrar histórico e consumir crédito
                 async with db.begin_nested():
+                    # Bloqueio pessimista garante consistência em requisições simultâneas
+                    await db.execute(
+                        select(User.id)
+                        .where(User.id == user.id)
+                        .with_for_update()
+                    )
+
                     balance_before_usage = await CalculationService._get_valid_credits_balance(db, user.id)
-                    if balance_before_usage <= 0:
-                        raise HTTPException(
-                            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                            detail="Insufficient valid credits"
-                        )
+                    balance_before_usage = await CalculationService._get_valid_credits_balance(db, user.id)
                 
                     usage_transaction = None
+
+                    if balance_before_usage <= 0:
+                        if has_lifetime_access:
+                            logger.info(
+                                "Pulando consumo de crédito por acesso vitalício",
+                                user_id=user.id
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                                detail="Insufficient valid credits"
+                            )
                     if balance_before_usage > 0:
                         # Registrar transacao de uso de credito
                         usage_transaction = CreditTransaction(
@@ -649,11 +666,6 @@ class CalculationService:
                             reference_id=None
                         )
                         db.add(usage_transaction)
-                    else:
-                        logger.info(
-                            "Pulando consumo de crédito por acesso vitalício",
-                            user_id=user.id
-                        )
                 
                     # Salvar historico
                     ip_address, user_agent = AuditService.extract_client_info(request) if request else (None, None)
@@ -686,6 +698,24 @@ class CalculationService:
                     await db.commit()
                 # Calcular saldo atualizado de créditos válidos
                 valid_credits_remaining = await CalculationService._get_valid_credits_balance(db, user.id)
+
+                # Limpar caches dependentes para refletir o novo histórico e saldo
+                try:
+                    FastAPICache.get_backend()
+                except AssertionError:
+                    pass
+                else:
+                    try:
+                        await FastAPICache.clear(namespace=resolve_user_namespace("user-history", user.id))
+                        await FastAPICache.clear(namespace=resolve_user_namespace("user-history-detalhado", user.id))
+                        await FastAPICache.clear(namespace=resolve_user_namespace("user-history-detailed", user.id))
+                        await FastAPICache.clear(namespace=resolve_user_namespace("user-me", user.id))
+                    except Exception as cache_exc:  # pragma: no cover - falha no cache não deve impedir o fluxo
+                        logger.warning(
+                            "Falha ao invalidar cache após cálculo",
+                            user_id=user.id,
+                            error=str(cache_exc)
+                        )
 
                 total_time_ms = int((time.time() - start_time) * 1000)
                 logger.info("Cálculo detalhado concluído", 

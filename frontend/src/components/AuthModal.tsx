@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useMutation } from "@tanstack/react-query";
 import clsx from "clsx";
@@ -55,6 +55,9 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
+
+  const [isOverlayVisible, setIsOverlayVisible] = useState(false);
+  const [isViewTransitioning, setIsViewTransitioning] = useState(false);
 
   const translateAuthMessage = useCallback((message: string) => {
     if (!message) {
@@ -126,20 +129,69 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (!isOpen || typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    const previousPaddingRight = body.style.paddingRight;
+    body.style.overflow = "hidden";
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPaddingRight;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsOverlayVisible(false);
+      return;
+    }
+
+    setIsOverlayVisible(false);
+
+    if (typeof window === "undefined") {
+      setIsOverlayVisible(true);
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setIsOverlayVisible(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsViewTransitioning(false);
+      return;
+    }
+
+    setIsViewTransitioning(true);
+
+    if (typeof window === "undefined") {
+      setIsViewTransitioning(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsViewTransitioning(false);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeView, isOpen]);
 
   const loginMutation = useMutation({
     mutationFn: async () => {
@@ -269,16 +321,6 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       registerForm.password === registerForm.confirmPassword,
     [registerForm.password, registerForm.confirmPassword]
   );
-
-  const handleOverlayClick = useCallback(
-    (event: MouseEvent<HTMLDivElement>) => {
-      if (event.target === event.currentTarget) {
-        onClose();
-      }
-    },
-    [onClose]
-  );
-
   const handleLoginSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginError("");
@@ -342,14 +384,20 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3 sm:p-6"
-      onClick={handleOverlayClick}
+      className={clsx(
+        "auth-modal-overlay fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3 sm:p-6",
+        isOverlayVisible ? "auth-modal-overlay--visible" : "auth-modal-overlay--hidden"
+      )}
       role="dialog"
       aria-modal="true"
     >
       <div
         id="auth-card"
-        className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className={clsx(
+          "auth-card relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl",
+          isOverlayVisible ? "auth-card--entered" : "auth-card--hidden",
+          isViewTransitioning && "auth-card--switching"
+        )}
       >
         <button
           type="button"
@@ -393,7 +441,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         </div>
 
         {activeView === "login" && (
-          <div className="auth-view p-6 sm:p-8">
+          <div className={clsx("auth-view p-6 sm:p-8", isViewTransitioning && "auth-view--switching")}>
             <form onSubmit={handleLoginSubmit} className="flex h-full flex-col">
               <div className="space-y-3 sm:space-y-4">
                 <div className="form-input-group">
@@ -482,7 +530,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "register" && (
-          <div className="auth-view p-6 sm:p-8">
+          <div className={clsx("auth-view p-6 sm:p-8", isViewTransitioning && "auth-view--switching")}>
             <form onSubmit={handleRegisterSubmit} className="flex h-full flex-col">
               <div className="text-center">
                 <h3 className="text-lg font-extrabold text-slate-800 sm:text-xl">
@@ -708,7 +756,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "verify" && (
-          <div className="auth-view p-6 sm:p-8">
+          <div className={clsx("auth-view p-6 sm:p-8", isViewTransitioning && "auth-view--switching")}>
             <form onSubmit={handleVerifySubmit} className="flex h-full flex-col">
               <h3 className="mb-2 text-center font-bold text-slate-800">Verificar Conta</h3>
               <p className="mb-6 text-center text-xs text-slate-600 sm:text-sm">
@@ -798,7 +846,7 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
         )}
 
         {activeView === "forgot" && (
-          <div className="auth-view p-6 sm:p-8">
+          <div className={clsx("auth-view p-6 sm:p-8", isViewTransitioning && "auth-view--switching")}>
             <form onSubmit={handleForgotSubmit} className="flex h-full flex-col">
               <h3 className="mb-2 text-center font-bold text-slate-800">Recuperar Senha</h3>
               <p className="mb-6 text-center text-xs text-slate-600 sm:text-sm">

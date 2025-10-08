@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_cache.decorator import cache
 
 from ..core.database import get_db
+from ..core.cache_utils import user_scoped_cache_key_builder
 from ..core.security import (
     create_access_token,
     get_current_active_user,
@@ -349,7 +350,11 @@ async def calcular(
 
 
 @router.get("/historico", response_model=List[QueryHistoryResponse])
-@cache(expire=300)  # Cache por 5 minutos
+@cache(
+    expire=300,
+    namespace="user-history",
+    key_builder=user_scoped_cache_key_builder,
+)
 async def historico(
     limit: int = 50,
     offset: int = 0,
@@ -391,7 +396,11 @@ async def historico(
         ]
     
 @router.get("/historico/detalhado", response_model=List[DetailedHistoryResponse])
-@cache(expire=300)
+@cache(
+    expire=300,
+    namespace="user-history-detailed",
+    key_builder=user_scoped_cache_key_builder,
+)
 async def historico_detalhado(
     limit: int = 50,
     offset: int = 0,
@@ -458,7 +467,11 @@ async def historico_detalhado(
 
 
 @router.get("/me", response_model=UserResponse)
-@cache(expire=60)  # Cache por 1 minuto
+@cache(
+    expire=60,
+    namespace="user-me",
+    key_builder=user_scoped_cache_key_builder,
+)
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
