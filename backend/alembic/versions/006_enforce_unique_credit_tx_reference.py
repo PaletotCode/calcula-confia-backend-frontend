@@ -6,7 +6,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "006_enforce_unique_credit_tx_reference"
+revision: str = "006_unique_credit_tx_ref"
 down_revision: Union[str, None] = "005_remove_ipca_selic_tables"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
