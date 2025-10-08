@@ -187,17 +187,17 @@ const carouselSlides = [
   {
     title: "Onde encontrar o ICMS?",
     description: "Procure na seção 'Detalhes de Faturamento' ou 'Tributos' da sua conta de energia.",
-    image: "https://imgur.com/gallery/img1-KQVrHDR#qcjTZfo",
+    image: "https://i.imgur.com/qcjTZfo.png",
   },
   {
     title: "Preencha o valor exato",
     description: "Use vírgula para centavos, por exemplo: 45,78.",
-    image: "https://imgur.com/a/img3-tHydAYC",
+    image: "https://i.imgur.com/GgratNb.png",
   },
   {
     title: "Use a data da fatura",
     description: "A data de vencimento ou de emissão pode ser usada como referência.",
-    image: "https://imgur.com/a/img2-EpEH1Vg",
+    image: "https://i.imgur.com/37RllDt.png",
   },
 ];
 
