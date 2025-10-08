@@ -7,9 +7,11 @@ import { LucideIcon } from "@/components/LucideIcon";
 import {
   getCreditsBalance,
   getCreditsHistory,
+  getDetailedHistory,
   getReferralStats,
   type CreditHistoryItem,
   type CreditsBalanceResponse,
+  type DetailedHistoryItem,
   type ReferralStatsResponse,
 } from "@/lib/api";
 import { parseHistoryMetadata } from "@/utils/history-metadata";
@@ -62,6 +64,10 @@ export default function HomePage({
     queryKey: ["credits", "balance", "home"],
     queryFn: getCreditsBalance,
   });
+  const detailedHistoryQuery = useQuery<DetailedHistoryItem[]>({
+    queryKey: ["detailed-history", "home", 5],
+    queryFn: () => getDetailedHistory({ limit: 5, offset: 0 }),
+  });
 
   const referralQuery = useQuery<ReferralStatsResponse>({
     queryKey: ["referral", "stats", "home"],
@@ -73,24 +79,54 @@ export default function HomePage({
     queryFn: () => getCreditsHistory({ limit: 5 }),
   });
 
-  const totalCredits = useMemo(() => {
-    const valid = balanceQuery.data?.valid_credits ?? 0;
-    const legacy = balanceQuery.data?.legacy_credits ?? 0;
-    return valid + legacy;
-  }, [balanceQuery.data]);
+  const totalCredits = balanceQuery.data?.valid_credits ?? 0;
+
+  const detailedHistoryMap = useMemo(() => {
+    const map = new Map<number, DetailedHistoryItem>();
+    (detailedHistoryQuery.data ?? []).forEach((item) => {
+      const idNumber = Number(item.id);
+      if (!Number.isNaN(idNumber)) {
+        map.set(idNumber, item);
+      }
+    });
+    return map;
+  }, [detailedHistoryQuery.data]);
+
+  const usageHistory = useMemo(() => {
+    if (!historyQuery.data) return [] as CreditHistoryItem[];
+    return historyQuery.data.filter((item) => {
+      if (item.transaction_type === "usage") return true;
+      if (typeof item.amount === "number" && item.amount < 0) return true;
+      return typeof item.reference_id === "string" && /^calc_\d+$/i.test(item.reference_id);
+    });
+  }, [historyQuery.data]);
 
   const recentHistory = useMemo(() => {
-    if (!historyQuery.data) return [] as CreditHistoryItem[];
-    return [...historyQuery.data]
+    if (usageHistory.length === 0) return [] as CreditHistoryItem[];
+    return [...usageHistory]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 3);
-  }, [historyQuery.data]);
+  }, [usageHistory]);
 
   const [openFaq, setOpenFaq] = useState<string | null>("workflow");
 
+  const resolveCalculationValue = (transaction: CreditHistoryItem) => {
+    if (!transaction.reference_id) return null;
+    const match = /^calc_(\d+)$/i.exec(transaction.reference_id);
+    if (!match) return null;
+    const calcId = Number(match[1]);
+    if (!Number.isFinite(calcId)) return null;
+    const details = detailedHistoryMap.get(calcId);
+    if (!details || typeof details.calculated_value !== "number") {
+      return null;
+    }
+    return details.calculated_value;
+  };
+
   const lastSimulation = recentHistory[0];
   const lastMetadata = lastSimulation ? parseHistoryMetadata(lastSimulation) : null;
-  const lastValue = lastMetadata?.calculationValue ?? lastSimulation?.amount;
+  const lastCalculatedValue = lastSimulation ? resolveCalculationValue(lastSimulation) : null;
+  const lastValue = lastCalculatedValue ?? lastMetadata?.calculationValue ?? null;
   const referralTotal = referralQuery.data?.total_referrals ?? 0;
   const referralEarned = referralQuery.data?.referral_credits_earned ?? 0;
 
@@ -183,7 +219,9 @@ export default function HomePage({
                     {historyQuery.isLoading
                       ? "Carregando..."
                       : lastSimulation
-                        ? currencyFormatter.format(Math.max(lastValue ?? 0, 0))
+                        ? lastValue != null
+                          ? currencyFormatter.format(Math.max(lastValue, 0))
+                          : "--"
                         : "Sem registros"}
                   </p>
                   <p className="text-xs text-slate-500">{lastSimulation ? formatDate(lastSimulation.created_at) : ""}</p>

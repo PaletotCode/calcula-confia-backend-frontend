@@ -150,11 +150,11 @@ export default function CreditsOverview({ onBuyCredits }: CreditsOverviewProps) 
                     ) : balanceQuery.isError ? (
                       <span className="text-base font-medium text-red-500">Erro ao carregar saldo</span>
                     ) : (
-                      formatCredits(totals.total)
+                      formatCredits(totals.valid)
                     )}
                   </h2>
                   <p className="mt-2 text-sm text-slate-600">
-                    Inclui todos os créditos prontos para uso e os ajustes automáticos vinculados à sua conta.
+                    Inclui todos os creditos prontos para uso. Ajustes automaticos aparecem ao lado.
                   </p>
                 </div>
 

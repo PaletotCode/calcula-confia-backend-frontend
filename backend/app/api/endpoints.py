@@ -572,6 +572,7 @@ async def get_credit_history(
                 amount=transaction.amount,
                 balance_after=transaction.balance_after,
                 description=transaction.description,
+                reference_id=transaction.reference_id,
                 expires_at=transaction.expires_at,
                 created_at=transaction.created_at
             )

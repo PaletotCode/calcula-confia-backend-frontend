@@ -6,9 +6,11 @@ import { LucideIcon } from "@/components/LucideIcon";
 import {
   getCreditsBalance,
   getCreditsHistory,
+  getDetailedHistory,
   getReferralStats,
   type CreditHistoryItem,
   type CreditsBalanceResponse,
+  type DetailedHistoryItem,
   type ReferralStatsResponse,
 } from "@/lib/api";
 
@@ -57,6 +59,10 @@ export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverv
     queryKey: ["credits", "balance"],
     queryFn: getCreditsBalance,
   });
+  const detailedHistoryQuery = useQuery<DetailedHistoryItem[]>({
+    queryKey: ["detailed-history", "overview", historyLimit],
+    queryFn: () => getDetailedHistory({ limit: historyLimit, offset: 0 }),
+  });
 
   const referralQuery = useQuery<ReferralStatsResponse>({
     queryKey: ["referral", "stats"],
@@ -68,18 +74,47 @@ export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverv
     queryFn: () => getCreditsHistory({ limit: historyLimit }),
   });
 
-  const totalCredits = useMemo(() => {
-    const valid = balanceQuery.data?.valid_credits ?? 0;
-    const legacy = balanceQuery.data?.legacy_credits ?? 0;
-    return valid + legacy;
-  }, [balanceQuery.data]);
+  const totalCredits = balanceQuery.data?.valid_credits ?? 0;
+
+  const detailedHistoryMap = useMemo(() => {
+    const map = new Map<number, DetailedHistoryItem>();
+    (detailedHistoryQuery.data ?? []).forEach((item) => {
+      const idNumber = Number(item.id);
+      if (!Number.isNaN(idNumber)) {
+        map.set(idNumber, item);
+      }
+    });
+    return map;
+  }, [detailedHistoryQuery.data]);
+
+  const usageHistory = useMemo(() => {
+    if (!historyQuery.data) return [] as CreditHistoryItem[];
+    return historyQuery.data.filter((item) => {
+      if (item.transaction_type === "usage") return true;
+      if (typeof item.amount === "number" && item.amount < 0) return true;
+      return typeof item.reference_id === "string" && /^calc_\d+$/i.test(item.reference_id);
+    });
+  }, [historyQuery.data]);
 
   const recentHistory = useMemo(() => {
-    if (!historyQuery.data) return [] as CreditHistoryItem[];
-    return [...historyQuery.data]
+    if (usageHistory.length === 0) return [] as CreditHistoryItem[];
+    return [...usageHistory]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, historyLimit);
-  }, [historyQuery.data, historyLimit]);
+  }, [usageHistory, historyLimit]);
+
+  const resolveCalculationValue = (transaction: CreditHistoryItem) => {
+    if (!transaction.reference_id) return null;
+    const match = /^calc_(\d+)$/i.exec(transaction.reference_id);
+    if (!match) return null;
+    const calcId = Number(match[1]);
+    if (!Number.isFinite(calcId)) return null;
+    const details = detailedHistoryMap.get(calcId);
+    if (!details || typeof details.calculated_value !== "number") {
+      return null;
+    }
+    return details.calculated_value;
+  };
 
   const handleNavigate = (section: CalculatorSection) => {
     if (onNavigate) {
@@ -209,11 +244,14 @@ export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverv
                       <div className="text-right">
                         {(() => {
                           const metadata = parseHistoryMetadata(item);
-                          const calculationValue = metadata.calculationValue ?? item.amount;
+                          const calculationValue =
+                            resolveCalculationValue(item) ?? metadata.calculationValue ?? null;
                           return (
                             <>
                               <p className="font-semibold text-teal-600">
-                                {formatCurrency(Math.max(0, calculationValue))}
+                                {calculationValue != null
+                                  ? formatCurrency(Math.max(0, calculationValue))
+                                  : "--"}
                               </p>
                               <p className="text-xs text-slate-500">
                                 Saldo atual: {formatCredits(item.balance_after)}

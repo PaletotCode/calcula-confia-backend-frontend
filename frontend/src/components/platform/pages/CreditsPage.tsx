@@ -76,11 +76,7 @@ export default function CreditsPage({ onRequestBuyCredits, onSlideStateChange }:
     queryFn: () => getCreditsHistory({ limit: 50 }), 
   });
 
-  const totalCredits = useMemo(() => {
-    const valid = balanceQuery.data?.valid_credits ?? 0;
-    const legacy = balanceQuery.data?.legacy_credits ?? 0;
-    return valid + legacy;
-  }, [balanceQuery.data]);
+  const totalCredits = useMemo(() => balanceQuery.data?.valid_credits ?? 0, [balanceQuery.data]);
 
   // RENOMEADO E FILTRO REMOVIDO para que o modal exiba TODAS as movimentações (débito e crédito)
   const allTransactions = useMemo(() => {

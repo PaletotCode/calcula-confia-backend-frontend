@@ -172,6 +172,7 @@ export interface CreditHistoryItem {
   amount: number;
   balance_after: number;
   description: string;
+  reference_id?: string | null;
   created_at: string;
   expires_at?: string | null;
   metadata?: Record<string, unknown> | string | null;
