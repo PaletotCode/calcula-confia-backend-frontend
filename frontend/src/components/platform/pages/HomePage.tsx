@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { LucideIcon } from "@/components/LucideIcon";
@@ -18,6 +18,8 @@ import { parseHistoryMetadata } from "@/utils/history-metadata";
 import FullscreenSlides, { type Slide } from "./FullscreenSlides";
 import type { SlidesNavigationStateChange } from "./slides-navigation";
 import { mobileSlideCardBase, mobileSlideSectionSpacing } from "../mobile";
+import useAuth from "@/hooks/useAuth";
+import ReferralCelebrationCard from "../ReferralCelebrationCard";
 
 interface HomePageProps {
   onNavigateToHistory?: () => void;
@@ -59,6 +61,9 @@ export default function HomePage({
   onNavigateToCalculator,
   onSlideStateChange,
 }: HomePageProps) {
+  const { user } = useAuth();
+  const [showReferralCelebration, setShowReferralCelebration] = useState(false);
+
   const baseSlideContainer = mobileSlideCardBase;
   const balanceQuery = useQuery<CreditsBalanceResponse>({
     queryKey: ["credits", "balance", "home"],
@@ -78,6 +83,45 @@ export default function HomePage({
     queryKey: ["credits", "history", "home", 5],
     queryFn: () => getCreditsHistory({ limit: 5 }),
   });
+
+  const userId = user?.id != null ? String(user.id) : null;
+
+  useEffect(() => {
+    setShowReferralCelebration(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    if (!historyQuery.data || historyQuery.data.length === 0) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storageKey = `cc-referral-celebrated-${userId}`;
+    if (window.localStorage.getItem(storageKey) === "seen") {
+      return;
+    }
+
+    const hasBonusTransaction = historyQuery.data.some(
+      (item) =>
+        item.transaction_type === "referral_bonus" &&
+        typeof item.reference_id === "string" &&
+        item.reference_id.toLowerCase() === `referral_bonus_for_${userId}`.toLowerCase(),
+    );
+
+    if (hasBonusTransaction) {
+      setShowReferralCelebration(true);
+      window.localStorage.setItem(storageKey, "seen");
+    }
+  }, [historyQuery.data, userId]);
+
+  const handleReferralCelebrationDismiss = () => {
+    setShowReferralCelebration(false);
+  };
 
   const totalCredits = balanceQuery.data?.valid_credits ?? 0;
 
@@ -136,6 +180,14 @@ export default function HomePage({
         ariaLabel: "Apresentação da plataforma",
         content: (
           <div className={clsx(baseSlideContainer, "text-center")}>
+            {showReferralCelebration ? (
+              <div className="mb-6 w-full text-left">
+                <ReferralCelebrationCard
+                  onDismiss={handleReferralCelebrationDismiss}
+                  className="w-full text-left"
+                />
+              </div>
+            ) : null}
             <div className={clsx(mobileSlideSectionSpacing, "md:space-y-4")}>
               <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-teal-700">
                 <LucideIcon name="Sparkles" className="h-4 w-4" />

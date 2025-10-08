@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from ..core.logging_config import get_logger
 from ..models_schemas.models import CreditTransaction, User
@@ -57,50 +58,64 @@ class CreditService:
         user_id: int,
         amount: int,
         payment_id: str,
-    ) -> None:
-        """Adiciona creditos, gera referral na primeira compra e processa bonus."""
-        async with db.begin_nested():
-            user_result = await db.execute(select(User).where(User.id == user_id))
-            user = user_result.scalar_one_or_none()
-            if not user:
-                logger.error("Usuario %s nao encontrado para adicionar creditos.", user_id)
-                return
+    ) -> bool:
+        """
+        Adiciona creditos, gera referral na primeira compra e processa bonus.
 
-            if await CreditService.has_processed_payment(db, payment_id):
-                logger.warning("Transacao %s ja processada. Ignorando.", payment_id)
-                return
+        Retorna True quando os créditos foram efetivamente registrados.
+        """
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            logger.error("Usuario %s nao encontrado para adicionar creditos.", user_id)
+            return False
 
-            # Gera o codigo de indicacao na primeira compra
-            if not user.referral_code:
-                user.referral_code = UserService._generate_referral_code(user.first_name, user.id)
-                logger.info(
-                    "Codigo de referencia '%s' gerado para o usuario %s na primeira compra.",
-                    user.referral_code,
-                    user.id,
+        if await CreditService.has_processed_payment(db, payment_id):
+            logger.warning("Transacao %s ja processada. Ignorando.", payment_id)
+            return False
+
+        try:
+            async with db.begin_nested():
+                # Gera o codigo de indicacao na primeira compra
+                if not user.referral_code:
+                    user.referral_code = UserService._generate_referral_code(user.first_name, user.id)
+                    logger.info(
+                        "Codigo de referencia '%s' gerado para o usuario %s na primeira compra.",
+                        user.referral_code,
+                        user.id,
+                    )
+
+                balance_before = await CalculationService._get_valid_credits_balance(db, user.id)
+                expires_at = datetime.utcnow() + timedelta(days=40)
+
+                purchase_tx = CreditTransaction(
+                    user_id=user_id,
+                    transaction_type="purchase",
+                    amount=amount,
+                    balance_before=balance_before,
+                    balance_after=balance_before + amount,
+                    description=f"Compra de {amount} creditos via PIX",
+                    reference_id=f"mp_{payment_id}",
+                    expires_at=expires_at,
                 )
+                db.add(purchase_tx)
+                logger.info("%s creditos adicionados ao user_id %s pela compra %s", amount, user_id, payment_id)
 
-            balance_before = await CalculationService._get_valid_credits_balance(db, user.id)
-            expires_at = datetime.utcnow() + timedelta(days=40)
+                await CreditService._refresh_user_legacy_balance(db, user)
 
-            purchase_tx = CreditTransaction(
-                user_id=user_id,
-                transaction_type="purchase",
-                amount=amount,
-                balance_before=balance_before,
-                balance_after=balance_before + amount,
-                description=f"Compra de {amount} creditos via PIX",
-                reference_id=f"mp_{payment_id}",
-                expires_at=expires_at,
+                # Bonus de indicacao (se aplicavel)
+                await CreditService._process_referral_bonus(db, user)
+
+            await db.commit()
+            return True
+        except IntegrityError as exc:
+            await db.rollback()
+            logger.warning(
+                "Transacao %s disparou violacao de unicidade. Mantendo idempotencia.",
+                payment_id,
+                error=str(exc),
             )
-            db.add(purchase_tx)
-            logger.info("%s creditos adicionados ao user_id %s pela compra %s", amount, user_id, payment_id)
-
-            await CreditService._refresh_user_legacy_balance(db, user)
-
-            # Bonus de indicacao (se aplicavel)
-            await CreditService._process_referral_bonus(db, user)
-
-        await db.commit()
+            return False
 
     @staticmethod
     async def _process_referral_bonus(db: AsyncSession, user: User) -> None:

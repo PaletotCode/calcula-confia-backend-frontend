@@ -254,12 +254,42 @@ async def process_payment_and_award(
             detail="already_processed",
         )
 
-    await CreditService.add_credits_from_purchase(
+    purchase_added = await CreditService.add_credits_from_purchase(
         db=db,
         user_id=user_id,
         amount=credits_int,
         payment_id=str(payment_id),
     )
+
+    if not purchase_added:
+        await PaymentStateService.mark_completed(
+            db,
+            payment_id=str(payment_id),
+            detail="already_processed",
+        )
+        try:
+            await FastAPICache.clear(namespace=resolve_user_namespace("user-me", user_id))
+            await FastAPICache.clear(namespace=resolve_user_namespace("user_me", user_id))
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "Falha ao limpar cache apos detectar pagamento ja processado (fase final).",
+                payment_id=payment_id,
+                error=str(exc),
+            )
+
+        logger.info(
+            "Processamento de pagamento %s tratado como idempotente apos tentativas concorrentes.",
+            payment_id,
+        )
+        return PaymentProcessingResult(
+            payment_id=payment_id,
+            status=status_pagamento,
+            user_id=user_id,
+            credits_amount=credits_int,
+            processed=False,
+            already_processed=True,
+            detail="already_processed",
+        )
 
     await PaymentStateService.mark_completed(
         db,

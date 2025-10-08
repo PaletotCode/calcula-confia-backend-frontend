@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useMutation } from "@tanstack/react-query";
 import clsx from "clsx";
@@ -10,6 +10,7 @@ import {
   verifyAccount,
   extractErrorMessage,
   type RegisterPayload,
+  validateReferralCode,
 } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -58,6 +59,16 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
 
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const [isViewTransitioning, setIsViewTransitioning] = useState(false);
+
+  type ReferralFeedbackState =
+    | { status: "idle"; message?: string; referrerName?: string | null; code?: string }
+    | { status: "checking"; message?: string; referrerName?: string | null; code?: string }
+    | { status: "valid" | "already_used" | "not_found" | "error"; message?: string; referrerName?: string | null; code?: string };
+
+  const [referralFeedback, setReferralFeedback] = useState<ReferralFeedbackState>({ status: "idle" });
+  const referralValidationRequestIdRef = useRef(0);
+  const referralLastQueryRef = useRef<string>("");
+  const referralLastStatusRef = useRef<ReferralFeedbackState["status"]>("idle");
 
   const translateAuthMessage = useCallback((message: string) => {
     if (!message) {
@@ -127,6 +138,93 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       setForgotEmail("");
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    referralLastStatusRef.current = referralFeedback.status;
+  }, [referralFeedback.status]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const trimmed = registerForm.referralCode.trim();
+
+    if (!trimmed) {
+      referralLastQueryRef.current = "";
+      if (referralLastStatusRef.current !== "idle") {
+        setReferralFeedback({ status: "idle" });
+      }
+      return;
+    }
+
+    if (trimmed.length < 3) {
+      referralLastQueryRef.current = trimmed;
+      if (referralLastStatusRef.current !== "idle") {
+        setReferralFeedback({ status: "idle" });
+      }
+      return;
+    }
+
+    if (trimmed === referralLastQueryRef.current && referralLastStatusRef.current !== "error") {
+      return;
+    }
+
+    setReferralFeedback({ status: "checking", message: "Verificando código de indicação..." });
+
+    let isCancelled = false;
+
+    const timeoutId = window.setTimeout(async () => {
+      const currentRequestId = referralValidationRequestIdRef.current + 1;
+      referralValidationRequestIdRef.current = currentRequestId;
+
+      try {
+        const result = await validateReferralCode(trimmed);
+        if (isCancelled || referralValidationRequestIdRef.current !== currentRequestId) {
+          return;
+        }
+
+        referralLastQueryRef.current = trimmed;
+
+        let statusMessage: string;
+        switch (result.status) {
+          case "valid":
+            statusMessage = result.referrer_name
+              ? `Código válido! Você e ${result.referrer_name} ganham 1 crédito bônus.`
+              : "Código válido! Você ganhou 1 crédito bônus por indicação.";
+            break;
+          case "already_used":
+            statusMessage = "Este código já foi utilizado por outra conta.";
+            break;
+          default:
+            statusMessage = "Não encontramos esse código. Confira e tente novamente.";
+            break;
+        }
+
+        setReferralFeedback({
+          status: result.status,
+          message: statusMessage,
+          referrerName: result.referrer_name ?? null,
+          code: result.status === "valid" ? result.code : undefined,
+        });
+      } catch {
+        if (isCancelled) {
+          return;
+        }
+
+        referralLastQueryRef.current = trimmed;
+        setReferralFeedback({
+          status: "error",
+          message: "Não foi possível validar o código agora. Tente novamente.",
+        });
+      }
+    }, 400);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [registerForm.referralCode]);
 
   useEffect(() => {
     if (!isOpen || typeof document === "undefined" || typeof window === "undefined") {
@@ -228,14 +326,20 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
   },
   });
 
-  const registerMutation = useMutation({
+const registerMutation = useMutation({
     mutationFn: async () => {
+      const trimmedReferral = registerForm.referralCode.trim();
+      const normalizedReferralCode =
+        referralFeedback.status === "valid"
+          ? (referralFeedback.code ?? trimmedReferral.toUpperCase())
+          : undefined;
+
       const payload: RegisterPayload = {
         email: registerForm.email.trim(),
         password: registerForm.password,
         first_name: registerForm.firstName.trim(),
         last_name: registerForm.lastName.trim(),
-        applied_referral_code: registerForm.referralCode.trim() || undefined,
+        applied_referral_code: normalizedReferralCode,
       };
       await registerRequest(payload);
       return payload.email.trim();
@@ -321,6 +425,41 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
       registerForm.password === registerForm.confirmPassword,
     [registerForm.password, registerForm.confirmPassword]
   );
+
+  const referralFeedbackPresentation = useMemo(() => {
+    switch (referralFeedback.status) {
+      case "checking":
+        return {
+          message: referralFeedback.message ?? "Verificando código de indicação...",
+          className: "text-slate-500",
+        };
+      case "valid":
+        return {
+          message:
+            referralFeedback.message ?? "Código válido! Você ganhou 1 crédito bônus por indicação.",
+          className: "text-emerald-600 font-semibold",
+        };
+      case "already_used":
+        return {
+          message: referralFeedback.message ?? "Este código já foi utilizado por outra conta.",
+          className: "text-red-500 font-semibold",
+        };
+      case "not_found":
+        return {
+          message: referralFeedback.message ?? "Não encontramos esse código. Confira e tente novamente.",
+          className: "text-red-500 font-semibold",
+        };
+      case "error":
+        return {
+          message:
+            referralFeedback.message ?? "Não foi possível validar o código agora. Tente novamente.",
+          className: "text-amber-500 font-semibold",
+        };
+      default:
+        return { message: "", className: "" };
+    }
+  }, [referralFeedback]);
+
   const handleLoginSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginError("");
@@ -621,6 +760,25 @@ export function AuthModal({ isOpen, onClose, defaultView = "login" }: AuthModalP
                         setRegisterForm((prev) => ({ ...prev, referralCode: event.target.value }))
                       }
                     />
+                    <div className="mt-1 text-xs" aria-live="polite">
+                      {referralFeedbackPresentation.message ? (
+                        <span
+                          className={clsx(
+                            "inline-flex items-center gap-1",
+                            referralFeedbackPresentation.className
+                          )}
+                        >
+                          <span aria-hidden="true">
+                            {referralFeedback.status === "valid"
+                              ? "✨"
+                              : referralFeedback.status === "checking"
+                                ? "⏳"
+                                : "⚠️"}
+                          </span>
+                          <span>{referralFeedbackPresentation.message}</span>
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-6 flex gap-3">
                     <button

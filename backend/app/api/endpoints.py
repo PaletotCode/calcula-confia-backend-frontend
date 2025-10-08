@@ -1,6 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from ..services import payment_service
 from ..services.credit_service import CreditService
@@ -9,7 +9,7 @@ from ..services.payment_state_service import PaymentStateService
 from fastapi.responses import JSONResponse
 
 from datetime import datetime
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from ..models_schemas.models import VerificationCode, CreditTransaction, VerificationType
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Response
@@ -83,6 +83,12 @@ class RegistrationResponse(BaseModel):
     message: str
     requires_verification: bool = True
     expires_in_minutes: int = 10
+
+class ReferralCodeStatusResponse(BaseModel):
+    code: str
+    status: Literal["valid", "already_used", "not_found"]
+    message: str
+    referrer_name: Optional[str] = None
 
 
 @router.post("/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
@@ -487,6 +493,49 @@ async def get_current_user_info(
 
 
 # ===== NOVOS ENDPOINTS DE REFERÊNCIA =====
+
+@router.get("/referral/check", response_model=ReferralCodeStatusResponse)
+async def check_referral_code(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    normalized_code = (code or "").strip().upper()
+    if not normalized_code:
+        return ReferralCodeStatusResponse(
+            code="",
+            status="not_found",
+            message="Informe um código de indicação.",
+        )
+
+    stmt = select(User).where(User.referral_code == normalized_code)
+    referrer_result = await db.execute(stmt)
+    referrer = referrer_result.scalar_one_or_none()
+
+    if not referrer:
+        return ReferralCodeStatusResponse(
+            code=normalized_code,
+            status="not_found",
+            message="Não encontramos esse código. Confira e tente novamente.",
+        )
+
+    usage_stmt = select(User.id).where(User.referred_by_id == referrer.id).limit(1)
+    usage_result = await db.execute(usage_stmt)
+
+    if usage_result.scalar_one_or_none() is not None:
+        return ReferralCodeStatusResponse(
+            code=normalized_code,
+            status="already_used",
+            message="Este código já foi utilizado por outra conta.",
+            referrer_name=referrer.first_name,
+        )
+
+    return ReferralCodeStatusResponse(
+        code=normalized_code,
+        status="valid",
+        message="Código válido! Você ganhará 1 crédito bônus ao concluir sua primeira compra.",
+        referrer_name=referrer.first_name,
+    )
+
 
 @router.get("/referral/stats", response_model=ReferralStatsResponse)
 async def get_referral_stats(

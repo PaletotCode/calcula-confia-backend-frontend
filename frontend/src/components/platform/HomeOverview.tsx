@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LucideIcon } from "@/components/LucideIcon";
 import {
@@ -15,6 +15,8 @@ import {
 } from "@/lib/api";
 
 import { parseHistoryMetadata } from "@/utils/history-metadata";
+import useAuth from "@/hooks/useAuth";
+import ReferralCelebrationCard from "./ReferralCelebrationCard";
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -55,6 +57,9 @@ function formatDate(value: string | undefined) {
 }
 
 export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverviewProps) {
+  const { user } = useAuth();
+  const [showReferralCelebration, setShowReferralCelebration] = useState(false);
+
   const balanceQuery = useQuery<CreditsBalanceResponse>({
     queryKey: ["credits", "balance"],
     queryFn: getCreditsBalance,
@@ -73,6 +78,45 @@ export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverv
     queryKey: ["credits", "history", "home", historyLimit],
     queryFn: () => getCreditsHistory({ limit: historyLimit }),
   });
+
+  const userId = user?.id != null ? String(user.id) : null;
+
+  useEffect(() => {
+    setShowReferralCelebration(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    if (!historyQuery.data || historyQuery.data.length === 0) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storageKey = `cc-referral-celebrated-${userId}`;
+    if (window.localStorage.getItem(storageKey) === "seen") {
+      return;
+    }
+
+    const hasBonusTransaction = historyQuery.data.some(
+      (item) =>
+        item.transaction_type === "referral_bonus" &&
+        typeof item.reference_id === "string" &&
+        item.reference_id.toLowerCase() === `referral_bonus_for_${userId}`.toLowerCase(),
+    );
+
+    if (hasBonusTransaction) {
+      setShowReferralCelebration(true);
+      window.localStorage.setItem(storageKey, "seen");
+    }
+  }, [historyQuery.data, userId]);
+
+  const handleReferralCelebrationDismiss = () => {
+    setShowReferralCelebration(false);
+  };
 
   const totalCredits = balanceQuery.data?.valid_credits ?? 0;
 
@@ -125,6 +169,12 @@ export default function HomeOverview({ onNavigate, historyLimit = 4 }: HomeOverv
   return (
     <div className="flex h-full min-h-[calc(100vh-140px)] w-full items-center justify-center bg-gradient-to-br from-slate-100 via-white to-slate-200 px-4 pb-24 pt-8 md:pb-28 md:pt-12">
       <div className="flex w-full max-w-5xl flex-col gap-8">
+        {showReferralCelebration ? (
+          <ReferralCelebrationCard
+            onDismiss={handleReferralCelebrationDismiss}
+            className="w-full"
+          />
+        ) : null}
         <header className="space-y-2 text-left">
           <p className="text-sm font-medium uppercase tracking-wide text-teal-600">Visão geral</p>
           <h1 className="text-3xl font-bold text-slate-900 md:text-4xl">Bem-vindo de volta à CalculaConfia</h1>

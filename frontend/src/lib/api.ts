@@ -166,6 +166,13 @@ export interface ReferralStatsResponse {
   referral_credits_remaining: number;
 }
 
+export interface ReferralCodeStatusResponse {
+  code: string;
+  status: "valid" | "already_used" | "not_found";
+  message: string;
+  referrer_name?: string | null;
+}
+
 export interface CreditHistoryItem {
   id: string | number;
   transaction_type: string;
@@ -398,6 +405,13 @@ export const getDetailedHistory = async (params?: GetDetailedHistoryParams) => {
 
 export const getReferralStats = async () => {
   const { data } = await api.get<ReferralStatsResponse>("/referral/stats");
+  return data;
+};
+
+export const validateReferralCode = async (code: string) => {
+  const { data } = await api.get<ReferralCodeStatusResponse>("/referral/check", {
+    params: { code },
+  });
   return data;
 };
 
