@@ -589,19 +589,10 @@ class CalculationService:
             try:
                 # Verificar créditos válidos em tempo real
                 valid_credits = await CalculationService._get_valid_credits_balance(db, user.id)
-                from .credit_service import CreditService
-
-                has_lifetime_access = await CreditService.user_has_paid_access(db, user.id)
-
-                if valid_credits <= 0 and not has_lifetime_access:
+                if valid_credits <= 0:
                     raise HTTPException(
                         status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                        detail="Insufficient valid credits"
-                    )
-                if valid_credits <= 0 and has_lifetime_access:
-                    logger.info(
-                        "Usuário com acesso vitalício identificado; liberando cálculo sem créditos",
-                        user_id=user.id
+                        detail="Creditos insuficientes para realizar este calculo."
                     )
                 
                 # Validações de entrada
@@ -639,33 +630,23 @@ class CalculationService:
                     )
 
                     balance_before_usage = await CalculationService._get_valid_credits_balance(db, user.id)
-                    balance_before_usage = await CalculationService._get_valid_credits_balance(db, user.id)
-                
-                    usage_transaction = None
-
                     if balance_before_usage <= 0:
-                        if has_lifetime_access:
-                            logger.info(
-                                "Pulando consumo de crédito por acesso vitalício",
-                                user_id=user.id
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                                detail="Insufficient valid credits"
-                            )
-                    if balance_before_usage > 0:
-                        # Registrar transacao de uso de credito
-                        usage_transaction = CreditTransaction(
-                            user_id=user.id,
-                            transaction_type="usage",
-                            amount=-1,
-                            balance_before=balance_before_usage,
-                            balance_after=balance_before_usage - 1,
-                            description="Calculo detalhado de ICMS",
-                            reference_id=None
+                        raise HTTPException(
+                            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                            detail="Creditos insuficientes para realizar este calculo."
                         )
-                        db.add(usage_transaction)
+
+                    # Registrar transacao de uso de credito
+                    usage_transaction = CreditTransaction(
+                        user_id=user.id,
+                        transaction_type="usage",
+                        amount=-1,
+                        balance_before=balance_before_usage,
+                        balance_after=balance_before_usage - 1,
+                        description="Calculo detalhado de ICMS",
+                        reference_id=None
+                    )
+                    db.add(usage_transaction)
                 
                     # Salvar historico
                     ip_address, user_agent = AuditService.extract_client_info(request) if request else (None, None)
@@ -689,11 +670,8 @@ class CalculationService:
                     db.add(history_record)
                     await db.flush()
                 
-                    if usage_transaction:
-                        usage_transaction.reference_id = f"calc_{history_record.id}"
-                        user.credits = max(0, balance_before_usage - 1)
-                    else:
-                        user.credits = max(0, balance_before_usage)
+                    usage_transaction.reference_id = f"calc_{history_record.id}"
+                    user.credits = max(0, balance_before_usage - 1)
                 
                     await db.commit()
                 # Calcular saldo atualizado de créditos válidos

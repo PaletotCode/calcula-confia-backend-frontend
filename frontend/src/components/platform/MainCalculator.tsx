@@ -37,6 +37,7 @@ interface OverlayState {
   title: string;
   messages: string[];
   retryStep: FlowStep;
+  shouldRedirectToCredits?: boolean;
 }
 
 const TIMELINE_ITEMS: TimelineItem[] = [
@@ -521,6 +522,7 @@ const MainCalculator = ({
           title: "Erro no cálculo",
           messages: [message],
           retryStep,
+          shouldRedirectToCredits: true,
         });
         setFlowStep("confirmation");
       }
@@ -555,7 +557,7 @@ const MainCalculator = ({
   }, [onNavigateToHistory]);
 
   const handleCloseOverlay = useCallback(
-    (retryStep: FlowStep, message: string) => {
+    (retryStep: FlowStep) => {
       setOverlay(null);
       setFlowStep(retryStep);
       if (retryStep === "form" && selectedIds.length > 0) {
@@ -565,11 +567,8 @@ const MainCalculator = ({
         });
         setCurrentFormIndex(firstInvalidIndex >= 0 ? firstInvalidIndex : 0);
       }
-      if (retryStep === "selection" && /crédito/i.test(message) && onRequestBuyCredits) {
-        onRequestBuyCredits();
-      }
     },
-    [formStateByBill, onRequestBuyCredits, selectedIds],
+    [formStateByBill, selectedIds],
   );
 
   const billCount = selectedIds.length;
@@ -654,11 +653,18 @@ const MainCalculator = ({
             title={overlay.title}
             messages={overlay.messages}
             primaryActionLabel={
-              overlay.retryStep === "selection" && onRequestBuyCredits
-                ? "Adicionar créditos"
-                : "Corrigir dados"
+              overlay.shouldRedirectToCredits
+                ? "Comprar Mais Créditos"
+                : overlay.retryStep === "selection" && onRequestBuyCredits
+                  ? "Adicionar créditos"
+                  : "Corrigir dados"
             }
-            onPrimaryAction={() => handleCloseOverlay(overlay.retryStep, overlay.messages.join(" "))}
+            onPrimaryAction={() => {
+              if (overlay.shouldRedirectToCredits && onRequestBuyCredits) {
+                onRequestBuyCredits();
+              }
+              handleCloseOverlay(overlay.retryStep);
+            }}
           />
         ) : null}
       </div>
